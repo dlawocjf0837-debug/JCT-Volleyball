@@ -1,0 +1,24 @@
+{
+  "name": "jct-실시간-연동",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "recharts": "2.12.7",
+    "@google/genai": "latest",
+    "react-dom": "18.3.1",
+    "react-native": "^0.81.1",
+    "peerjs": "1.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
