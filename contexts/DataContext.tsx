@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useReducer, useRef } from 'react';
 import Peer, { DataConnection } from 'peerjs';
-import { MatchState, TeamSet } from '../types';
+import { MatchState, TeamSet } from '../types.ts';
 
 const TEAM_SETS_KEY = 'jct_volleyball_team_sets';
 const MATCH_HISTORY_KEY = 'jct_volleyball_match_history';

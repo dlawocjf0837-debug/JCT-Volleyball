@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { MatchState, SavedTeamInfo } from '../types';
-import { useData } from '../contexts/DataContext';
-import { CrownIcon } from '../components/icons';
+import { MatchState, SavedTeamInfo } from '../types.ts';
+import { useData } from '../contexts/DataContext.tsx';
+import { CrownIcon } from '../components/icons.tsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface RecordScreenProps {

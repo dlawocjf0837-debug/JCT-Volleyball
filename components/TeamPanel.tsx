@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { TeamId } from '../types';
-import { UserGroupIcon } from './icons';
+import { TeamId } from '../types.ts';
+import { UserGroupIcon } from './icons.tsx';
 
 interface TeamPanelProps {
     teamId: TeamId;

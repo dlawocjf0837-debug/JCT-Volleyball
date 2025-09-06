@@ -1,17 +1,17 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { DataProvider, useData } from './contexts/DataContext';
-import Header from './components/common/Header';
-import Toast from './components/common/Toast';
-import MenuScreen from './screens/MenuScreen';
-import PlayerInputScreen from './screens/PlayerInputScreen';
-import TeamBuilderScreen from './screens/TeamBuilderScreen';
-import MatchSetupScreen from './screens/MatchSetupScreen';
-import { ScoreboardScreen } from './screens/ScoreboardScreen';
-import RecordScreen from './screens/RecordScreen';
-import RefereeScreen from './screens/RefereeScreen';
-import AnnouncerScreen from './screens/AnnouncerScreen';
-import CameraDirectorScreen from './screens/CameraDirectorScreen';
-import { Player, Screen, Stats, STAT_KEYS, MatchState } from './types';
+import { DataProvider, useData } from './contexts/DataContext.tsx';
+import Header from './components/common/Header.tsx';
+import Toast from './components/common/Toast.tsx';
+import MenuScreen from './screens/MenuScreen.tsx';
+import PlayerInputScreen from './screens/PlayerInputScreen.tsx';
+import TeamBuilderScreen from './screens/TeamBuilderScreen.tsx';
+import MatchSetupScreen from './screens/MatchSetupScreen.tsx';
+import { ScoreboardScreen } from './screens/ScoreboardScreen.tsx';
+import RecordScreen from './screens/RecordScreen.tsx';
+import RefereeScreen from './screens/RefereeScreen.tsx';
+import AnnouncerScreen from './screens/AnnouncerScreen.tsx';
+import CameraDirectorScreen from './screens/CameraDirectorScreen.tsx';
+import { Player, Screen, Stats, STAT_KEYS, MatchState } from './types.ts';
 
 const AppContent: React.FC = () => {
     const [view, setView] = useState<'menu' | 'teamBuilder' | 'matchSetup' | 'scoreboard' | 'history' | 'referee' | 'announcer' | 'cameraDirector'>('menu');

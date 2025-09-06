@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Player, STAT_KEYS, STAT_NAMES } from '../types';
+import { Player, STAT_KEYS, STAT_NAMES } from '../types.ts';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface StatModalProps {

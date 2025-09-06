@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useData } from '../contexts/DataContext';
-import { PlayIcon, PauseIcon, VolleyballIcon, StopwatchIcon, QuestionMarkCircleIcon } from '../components/icons';
-import RulesModal from '../components/RulesModal';
-import TimeoutModal from '../components/TimeoutModal';
+import { useData } from '../contexts/DataContext.tsx';
+import { PlayIcon, PauseIcon, VolleyballIcon, StopwatchIcon, QuestionMarkCircleIcon } from '../components/icons.tsx';
+import RulesModal from '../components/RulesModal.tsx';
+import TimeoutModal from '../components/TimeoutModal.tsx';
 
 interface ScoreboardProps {
     onBackToMenu: () => void;

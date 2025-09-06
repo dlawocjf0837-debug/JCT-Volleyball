@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { useData } from '../contexts/DataContext';
-import { CrownIcon, QuestionMarkCircleIcon } from '../components/icons';
-import RulesModal from '../components/RulesModal';
+import { useData } from '../contexts/DataContext.tsx';
+import { CrownIcon, QuestionMarkCircleIcon } from '../components/icons.tsx';
+import RulesModal from '../components/RulesModal.tsx';
 
 interface FlattenedTeam {
     teamName: string;

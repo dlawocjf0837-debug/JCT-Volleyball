@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Player, Team, TeamSet } from '../types';
-import { useData } from '../contexts/DataContext';
-import { CrownIcon } from './icons';
+import { Player, Team, TeamSet } from '../types.ts';
+import { useData } from '../contexts/DataContext.tsx';
+import { CrownIcon } from './icons.tsx';
 
 interface FinalTeamsScreenProps {
     teams: Team[];
