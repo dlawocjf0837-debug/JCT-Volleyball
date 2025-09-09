@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useReducer, useRef } from 'react';
 import Peer, { DataConnection } from 'peerjs';
-import { MatchState, TeamSet } from '../types.ts';
+import { MatchState, TeamSet } from '../types';
 
 const TEAM_SETS_KEY = 'jct_volleyball_team_sets';
 const MATCH_HISTORY_KEY = 'jct_volleyball_match_history';
@@ -279,7 +279,22 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         if (peerRef.current) {
             peerRef.current.destroy();
         }
-        const newPeer = id ? new Peer(id) : new Peer();
+
+        // Configuration to improve connection reliability using public STUN servers
+        // and enable verbose logging for easier debugging.
+        const peerConfig = {
+            debug: 2, // 0: Errors, 1: Warnings, 2: Info (more verbose)
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                ],
+            },
+        };
+        
+        const newPeer = id ? new Peer(id, peerConfig) : new Peer(peerConfig);
+
         peerRef.current = newPeer;
         newPeer.on('open', peerId => {
             setP2p(prev => ({ ...prev, peer: newPeer, sessionId: peerId, error: null }));

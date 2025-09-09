@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { useData } from '../contexts/DataContext.tsx';
-import { TeamSet, SavedTeamInfo } from '../types.ts';
+import { useData } from '../contexts/DataContext';
+import { TeamSet, SavedTeamInfo } from '../types';
 
 interface MatchSetupScreenProps {
     onStartMatch: (teams: { teamA: string, teamB: string, teamAKey?: string, teamBKey?: string }) => void;

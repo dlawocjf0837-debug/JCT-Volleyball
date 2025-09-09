@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MatchState } from '../types.ts';
-import { useData } from '../contexts/DataContext.tsx';
+import { MatchState } from '../types';
+import { useData } from '../contexts/DataContext';
 
 // Helper to format time in mm:ss
 const formatTime = (seconds: number) => {

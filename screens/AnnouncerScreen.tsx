@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { useData } from '../contexts/DataContext.tsx';
-import { Player, MatchState, SavedTeamInfo } from '../types.ts';
-import StatModal from '../components/StatModal.tsx';
-import { CrownIcon, QuestionMarkCircleIcon } from '../components/icons.tsx';
-import CommentaryGuideModal from '../components/CommentaryGuideModal.tsx';
+import { useData } from '../contexts/DataContext';
+import { Player, MatchState, SavedTeamInfo } from '../types';
+import StatModal from '../components/StatModal';
+import { CrownIcon, QuestionMarkCircleIcon } from '../components/icons';
+import CommentaryGuideModal from '../components/CommentaryGuideModal';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface AnnouncerScreenProps {

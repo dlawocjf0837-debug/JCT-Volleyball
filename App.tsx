@@ -1,20 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { DataProvider, useData } from './contexts/DataContext.tsx';
-import Header from './components/common/Header.tsx';
-import Toast from './components/common/Toast.tsx';
-import MenuScreen from './screens/MenuScreen.tsx';
-import PlayerInputScreen from './screens/PlayerInputScreen.tsx';
-import TeamBuilderScreen from './screens/TeamBuilderScreen.tsx';
-import MatchSetupScreen from './screens/MatchSetupScreen.tsx';
-import { ScoreboardScreen } from './screens/ScoreboardScreen.tsx';
-import RecordScreen from './screens/RecordScreen.tsx';
-import RefereeScreen from './screens/RefereeScreen.tsx';
-import AnnouncerScreen from './screens/AnnouncerScreen.tsx';
-import CameraDirectorScreen from './screens/CameraDirectorScreen.tsx';
-import { Player, Screen, Stats, STAT_KEYS, MatchState } from './types.ts';
+import { DataProvider, useData } from './contexts/DataContext';
+import Header from './components/common/Header';
+import Toast from './components/common/Toast';
+import MenuScreen from './screens/MenuScreen';
+import PlayerInputScreen from './screens/PlayerInputScreen';
+import TeamBuilderScreen from './screens/TeamBuilderScreen';
+import MatchSetupScreen from './screens/MatchSetupScreen';
+import { ScoreboardScreen } from './screens/ScoreboardScreen';
+import RecordScreen from './screens/RecordScreen';
+import RefereeScreen from './screens/RefereeScreen';
+import AnnouncerScreen from './screens/AnnouncerScreen';
+import CameraDirectorScreen from './screens/CameraDirectorScreen';
+import AnalysisScreen from './screens/AnalysisScreen';
+import { Player, Screen, Stats, STAT_KEYS, MatchState } from './types';
 
 const AppContent: React.FC = () => {
-    const [view, setView] = useState<'menu' | 'teamBuilder' | 'matchSetup' | 'scoreboard' | 'history' | 'referee' | 'announcer' | 'cameraDirector'>('menu');
+    const [view, setView] = useState<'menu' | 'teamBuilder' | 'matchSetup' | 'scoreboard' | 'history' | 'referee' | 'announcer' | 'cameraDirector' | 'analysis'>('menu');
     const [scoreboardMode, setScoreboardMode] = useState<'record' | 'referee'>('record');
     const { toast, hideToast, isLoading, exportData, importData, startHostSession, matchState, p2p } = useData();
 
@@ -148,6 +149,8 @@ const AppContent: React.FC = () => {
                  return <AnnouncerScreen onNavigateToHistory={() => setView('history')} />;
             case 'cameraDirector':
                  return <CameraDirectorScreen />;
+            case 'analysis':
+                return <AnalysisScreen />;
             case 'menu':
             default:
                 return (
@@ -159,6 +162,7 @@ const AppContent: React.FC = () => {
                         }}
                         onStartMatch={() => setView('matchSetup')}
                         onShowHistory={() => setView('history')}
+                        onStartAnalysis={() => setView('analysis')}
                         onStartReferee={() => setView('referee')}
                         onStartAnnouncer={() => setView('announcer')}
                         onStartCameraDirector={() => setView('cameraDirector')}
@@ -178,6 +182,7 @@ const AppContent: React.FC = () => {
             case 'referee': return '주심용 점수판';
             case 'announcer': return '아나운서 프로그램';
             case 'cameraDirector': return '카메라 감독 프로그램';
+            case 'analysis': return '종합 데이터 분석';
             default: return 'MAIN MENU';
         }
     }

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Player, Stats, STAT_KEYS } from '../types.ts';
+import { Player, Stats, STAT_KEYS } from '../types';
 
 interface PlayerInputScreenProps {
     onStart: (players: Omit<Player, 'id' | 'anonymousName' | 'isCaptain' | 'totalScore'>[], selectedClass: string) => void;

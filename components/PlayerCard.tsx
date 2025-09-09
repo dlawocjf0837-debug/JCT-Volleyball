@@ -1,6 +1,6 @@
 import React from 'react';
-import { Player } from '../types.ts';
-import { CrownIcon, ChartBarIcon } from './icons.tsx';
+import { Player } from '../types';
+import { CrownIcon, ChartBarIcon } from './icons';
 
 interface PlayerCardProps {
     player: Player;

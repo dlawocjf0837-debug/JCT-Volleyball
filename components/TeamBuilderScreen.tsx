@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Player, Team, TeamId, STAT_KEYS, STAT_NAMES, Stats } from '../types.ts';
-import PlayerCard from './PlayerCard.tsx';
-import TeamPanel from './TeamPanel.tsx';
-import StatModal from './StatModal.tsx';
-import ComparisonModal from './ComparisonModal.tsx';
-import FinalTeamsScreen from './FinalTeamsScreen.tsx';
-import { SparklesIcon, UsersIcon, EyeIcon, EyeSlashIcon, ScaleIcon } from './icons.tsx';
+import { Player, Team, TeamId, STAT_KEYS, STAT_NAMES, Stats } from '../types';
+import PlayerCard from './PlayerCard';
+import TeamPanel from './TeamPanel';
+import StatModal from './StatModal';
+import ComparisonModal from './ComparisonModal';
+import FinalTeamsScreen from './FinalTeamsScreen';
+import { SparklesIcon, UsersIcon, EyeIcon, EyeSlashIcon, ScaleIcon } from './icons';
 import { GoogleGenAI, Type } from '@google/genai';
 
 interface TeamBuilderScreenProps {

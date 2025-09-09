@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useData } from '../contexts/DataContext.tsx';
+import { useData } from '../contexts/DataContext';
 
 interface MenuScreenProps {
     onStartTeamBuilder: () => void;
     onStartMatch: () => void;
     onShowHistory: () => void;
+    onStartAnalysis: () => void;
     onStartReferee: () => void;
     onStartAnnouncer: () => void;
     onStartCameraDirector: () => void;
@@ -16,6 +17,7 @@ const MenuScreen: React.FC<MenuScreenProps> = ({
     onStartTeamBuilder, 
     onStartMatch, 
     onShowHistory, 
+    onStartAnalysis,
     onStartReferee, 
     onStartAnnouncer, 
     onStartCameraDirector,
@@ -128,6 +130,12 @@ const MenuScreen: React.FC<MenuScreenProps> = ({
                 className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-5 px-8 rounded-lg transition duration-200 text-2xl shadow-lg transform hover:scale-105"
             >
                 기록 보기
+            </button>
+            <button
+                onClick={onStartAnalysis}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-5 px-8 rounded-lg transition duration-200 text-2xl shadow-lg transform hover:scale-105"
+            >
+                경기 분석
             </button>
             <button
                 onClick={onStartReferee}
