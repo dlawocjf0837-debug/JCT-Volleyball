@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JCT Volleyball Team Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+    body {
+        background-image:
+            linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 30px 30px;
+    }
+    .toggle-checkbox:checked {
+        right: 0;
+        border-color: #00A3FF; /* electric-blue */
+    }
+    .toggle-checkbox:checked + .toggle-label {
+        background-color: #00A3FF; /* electric-blue */
+    }
+    @keyframes fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+        animation: fade-in 0.5s ease-out forwards;
+    }
+    @keyframes glow {
+        0%, 100% { box-shadow: 0 0 5px #00A3FF, 0 0 10px #00A3FF, 0 0 15px #00A3FF; }
+        50% { box-shadow: 0 0 10px #00A3FF, 0 0 20px #00A3FF, 0 0 30px #00A3FF; }
+    }
+    .glowing-border {
+        animation: glow 2s ease-in-out infinite;
+        border-color: #00A3FF;
+    }
+</style>
+
+<link rel="stylesheet" href="/index.css">
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.2.0",
+    "peerjs": "https://aistudiocdn.com/peerjs@^1.5.5",
+    "vite": "https://aistudiocdn.com/vite@^7.1.5",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.0.2"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/JCT-Volleyball/assets/index-DE9y6RVJ.js"></script>
+</head>
+<body class="bg-[#1A1A2E] text-slate-200">
+<div id="root"></div>
+</body>
+</html>
