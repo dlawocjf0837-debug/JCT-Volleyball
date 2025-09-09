@@ -37,6 +37,9 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
     const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
     const [sortKey, setSortKey] = useState<keyof Stats | 'totalScore'>('totalScore');
 
+    // Safely check for API key to prevent crashes in environments without process.env
+    const hasApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY;
+
     useEffect(() => {
         const playerMap = initialPlayers.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
         setPlayers(playerMap);
@@ -145,6 +148,10 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
     }, [draftOrder, currentPickIndex, teams, unassignedPlayerIds]);
 
     const handleAiTeamBuilding = async () => {
+        if (!hasApiKey) {
+            alert("AI 기능을 사용하려면 API 키 설정이 필요합니다. 현재 환경에서는 사용할 수 없습니다.");
+            return;
+        }
         if (unassignedPlayerIds.length === 0) {
             alert('모든 선수가 이미 팀에 배정되었습니다.');
             return;
@@ -289,7 +296,11 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
             </button>
              {phase === 'drafting' && (
                 <>
-                    <button onClick={handleAiTeamBuilding} disabled={isAiLoading || unassignedPlayerIds.length === 0} className="flex items-center gap-2 bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed">
+                    <button 
+                        onClick={handleAiTeamBuilding} 
+                        disabled={!hasApiKey || isAiLoading || unassignedPlayerIds.length === 0} 
+                        title={!hasApiKey ? "API 키가 설정되지 않아 AI 기능을 사용할 수 없습니다." : ""}
+                        className="flex items-center gap-2 bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed">
                         <SparklesIcon className="w-5 h-5" />
                         {isAiLoading ? '팀 구성 중...' : 'AI로 팀 자동 구성'}
                     </button>

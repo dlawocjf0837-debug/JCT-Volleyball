@@ -108,6 +108,13 @@ const AnalysisScreen: React.FC = () => {
     const handleAiAnalysis = useCallback(async () => {
         setIsAiLoading(true);
         setAiAnalysis('');
+        
+        const hasApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY;
+        if (!hasApiKey) {
+            setAiAnalysis("AI 분석 기능을 사용하려면 API 키가 설정되어야 합니다. 현재 환경에서는 사용할 수 없습니다.");
+            setIsAiLoading(false);
+            return;
+        }
 
         const promptData = `
             You are a professional volleyball coach and data analyst reviewing student data.
@@ -257,11 +264,17 @@ const AiAnalysisPanel: React.FC<{ onAnalyze: () => void, isLoading: boolean, res
         if (line.startsWith('- ')) return <li key={index} className="ml-5 list-disc">{line.substring(2)}</li>;
         return <p key={index} className="mb-2">{line}</p>;
     });
+
+    const hasApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY;
     
     return (
         <div className="flex flex-col h-full">
             <div className="text-center mb-4">
-                <button onClick={onAnalyze} disabled={isLoading} className="bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-3 px-8 rounded-lg transition duration-200 text-lg disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center gap-2 mx-auto">
+                <button 
+                    onClick={onAnalyze} 
+                    disabled={!hasApiKey || isLoading} 
+                    title={!hasApiKey ? "API 키가 설정되지 않아 AI 기능을 사용할 수 없습니다." : ""}
+                    className="bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-3 px-8 rounded-lg transition duration-200 text-lg disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center gap-2 mx-auto">
                     <SparklesIcon className="w-5 h-5" />
                     {isLoading ? '분석 중...' : 'AI로 데이터 분석하기'}
                 </button>
