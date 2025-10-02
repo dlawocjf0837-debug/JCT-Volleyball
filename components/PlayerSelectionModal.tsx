@@ -21,8 +21,7 @@ const PlayerSelectionModal: React.FC<PlayerSelectionModalProps> = ({
     if (!isOpen) return null;
     
     // Sort players by student number
-    // FIX: Add explicit type `Player` to sort callback parameters `a` and `b` to resolve them being inferred as `unknown`.
-    const sortedPlayers = Object.values(players).sort((a: Player, b: Player) => {
+    const sortedPlayers = Object.values(players).sort((a, b) => {
         return parseInt(a.studentNumber, 10) - parseInt(b.studentNumber, 10);
     });
 
@@ -41,8 +40,7 @@ const PlayerSelectionModal: React.FC<PlayerSelectionModalProps> = ({
                     <p className="text-slate-300">어떤 선수가 기록했나요?</p>
                 </div>
                 <div className="max-h-80 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {/* FIX: Add explicit type `Player` to map callback parameter `player` to resolve it being inferred as `unknown`. */}
-                    {sortedPlayers.map((player: Player) => (
+                    {sortedPlayers.map(player => (
                         <button
                             key={player.id}
                             onClick={() => onSelect(player.id)}

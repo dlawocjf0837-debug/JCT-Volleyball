@@ -7,7 +7,7 @@ import PlayerHistoryModal from '../components/PlayerHistoryModal';
 import TeamEmblem from '../components/TeamEmblem';
 
 interface RecordScreenProps {
-    onContinueGame: (state: MatchState) => void;
+    onContinueGame: (state: MatchState & { time?: number }) => void;
 }
 
 type EnrichedMatch = MatchState & {
@@ -315,7 +315,7 @@ const Timeline: React.FC<{ events: TimelineEvent[] }> = ({ events }) => {
 
 
 const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
-    const { teamSets, matchHistory, matchState, matchTime, saveMatchHistory, clearInProgressMatch, showToast, p2p } = useData();
+    const { teamSets, matchHistory, matchState, matchTime, saveMatchHistory, clearInProgressMatch, showToast } = useData();
     const [selectedMatch, setSelectedMatch] = useState<EnrichedMatch | null>(null);
     const [selectedClass, setSelectedClass] = useState<string>('');
     const [pointsData, setPointsData] = useState<Record<string, { teamA: number; teamB: number }>>({});
@@ -420,16 +420,11 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
         if (!selectedClass) return validMatches;
 
         return validMatches.filter(match => {
-            // FIX: Explicitly cast the result of the index access to resolve 'unknown' type error.
-            const teamAClass = match.teamA.key ? (allTeamData[match.teamA.key] as FlattenedTeam)?.className : null;
-            // FIX: Explicitly cast the result of the index access to resolve 'unknown' type error.
-            const teamBClass = match.teamB.key ? (allTeamData[match.teamB.key] as FlattenedTeam)?.className : null;
-            if (p2p.isHost || (teamAClass && teamBClass)) {
-                return teamAClass === selectedClass || teamBClass === selectedClass;
-            }
-            return true;
+            const teamAClass = match.teamA.key ? allTeamData[match.teamA.key]?.className : null;
+            const teamBClass = match.teamB.key ? allTeamData[match.teamB.key]?.className : null;
+            return teamAClass === selectedClass || teamBClass === selectedClass;
         });
-    }, [allMatches, selectedClass, allTeamData, p2p.isHost]);
+    }, [allMatches, selectedClass, allTeamData]);
     
     useEffect(() => {
         const calculateMvp = (match: EnrichedMatch): MvpResult => {
@@ -822,12 +817,12 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-2 ml-4 flex-shrink-0">
-                                        {match.status === 'in_progress' && p2p.isHost && (
+                                        {match.status === 'in_progress' && (
                                             <button onClick={(e) => { e.stopPropagation(); onContinueGame(match); }} className="bg-green-600 hover:bg-green-500 text-white font-bold py-1 px-3 rounded-md text-sm transition" aria-label={`${match.teamA.name} vs ${match.teamB.name} 경기 이어하기`}>
                                                 이어하기
                                             </button>
                                         )}
-                                        {p2p.isHost && <button onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }} className="text-slate-500 hover:text-red-500 font-bold text-xl flex items-center justify-center w-6 h-6 rounded-full hover:bg-slate-700" aria-label="기록 삭제">&times;</button>}
+                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(match.id); }} className="text-slate-500 hover:text-red-500 font-bold text-xl flex items-center justify-center w-6 h-6 rounded-full hover:bg-slate-700" aria-label="기록 삭제">&times;</button>
                                     </div>
                                 </div>
                             )})

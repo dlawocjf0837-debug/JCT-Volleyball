@@ -89,8 +89,7 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
         if (selectedCaptainIds.size !== 4) return;
         
         const updatedPlayers = { ...players };
-        // FIX: Add explicit type `string` to `id` to prevent it from being inferred as `unknown`.
-        selectedCaptainIds.forEach((id: string) => {
+        selectedCaptainIds.forEach(id => {
             if(updatedPlayers[id]) updatedPlayers[id].isCaptain = true;
         });
         
@@ -244,9 +243,7 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
     const getStatLeaders = (statKey: keyof Stats | 'total') => {
         let max = -1, leaders: TeamId[] = [];
         Object.entries(teamAverages).forEach(([teamId, data]) => {
-            // FIX: Cast `data` to its expected type to resolve properties not existing on `unknown`.
-            const typedData = data as { stats: Record<keyof Stats, number>, total: number };
-            const value = statKey === 'total' ? typedData.total : typedData.stats[statKey as keyof Stats];
+            const value = statKey === 'total' ? data.total : data.stats[statKey];
             if (value > max) { max = value; leaders = [teamId]; } 
             else if (value.toFixed(1) === max.toFixed(1)) { leaders.push(teamId); }
         });

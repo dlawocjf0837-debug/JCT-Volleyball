@@ -163,8 +163,7 @@ const LiveGameDisplay: React.FC<{ match: MatchState, allTeamInfo: AllTeamInfo }>
             );
         }
 
-        // FIX: Add explicit `Player` type to sort callback parameters `a` and `b` to resolve them being inferred as `unknown`.
-        const sortedPlayers = Object.values(team.players).sort((a: Player, b: Player) => {
+        const sortedPlayers = Object.values(team.players).sort((a, b) => {
             const aIsCaptain = teamInfo ? a.id === teamInfo.captainId : false;
             const bIsCaptain = teamInfo ? b.id === teamInfo.captainId : false;
             if (aIsCaptain !== bIsCaptain) {
@@ -183,8 +182,7 @@ const LiveGameDisplay: React.FC<{ match: MatchState, allTeamInfo: AllTeamInfo }>
                     </div>
                 </div>
                 <ul className="space-y-2">
-                    {/* FIX: Add explicit `Player` type to map callback parameter `player` to resolve it being inferred as `unknown`. */}
-                    {sortedPlayers.map((player: Player) => {
+                    {sortedPlayers.map(player => {
                         const isCaptain = teamInfo ? player.id === teamInfo.captainId : false;
                         return (
                             <li key={player.id} onClick={() => setSelectedPlayer(player)} className="flex items-center gap-3 bg-slate-800 p-2 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors">
@@ -241,7 +239,8 @@ const LiveGameDisplay: React.FC<{ match: MatchState, allTeamInfo: AllTeamInfo }>
 };
 
 const AnnouncerScreen: React.FC<AnnouncerScreenProps> = ({ onNavigateToHistory }) => {
-    const { matchState, teamSets, p2p } = useData();
+    // FIX: Removed p2p from useData as it's not defined in the context.
+    const { matchState, teamSets } = useData();
 
     const allTeamInfo = useMemo((): AllTeamInfo => {
         const teams: Record<string, TeamData> = {};
@@ -269,7 +268,7 @@ const AnnouncerScreen: React.FC<AnnouncerScreenProps> = ({ onNavigateToHistory }
                 <div className="flex-grow flex flex-col items-center justify-center text-center text-slate-400">
                     <p className="text-2xl font-bold">진행 중인 경기가 없습니다.</p>
                     <p className="mt-2">호스트가 경기를 시작하면 데이터가 여기에 표시됩니다.</p>
-                    <p className="mt-1 text-sm">현재 세션 ID: <span className="font-mono text-slate-300">{p2p.connections[0]?.peer || '연결되지 않음'}</span></p>
+                    {/* FIX: Removed line displaying session ID as p2p feature is not available. */}
                     <button onClick={onNavigateToHistory} className="mt-6 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg">
                         지난 경기 기록 보기
                     </button>

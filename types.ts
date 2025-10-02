@@ -32,11 +32,6 @@ export interface Player {
     totalScore: number;
 }
 
-export enum Screen {
-    Input = 'INPUT',
-    Builder = 'BUILDER',
-}
-
 export type TeamId = string;
 
 export interface Team {
@@ -106,6 +101,14 @@ export interface TeamMatchState {
     playerStats: Record<string, PlayerStats>;
 }
 
+export interface ScoreEvent {
+    team: 'A' | 'B'; // Team that scored
+    scoringPlayerId?: string;
+    type: 'SCORE' | 'SERVICE_ACE' | 'SERVICE_FAULT' | 'BLOCKING_POINT' | 'SPIKE_SUCCESS' | 'OPPONENT_FAULT';
+    description: string;
+    score: { a: number, b: number };
+}
+
 export interface MatchState {
     teamA: TeamMatchState;
     teamB: TeamMatchState;
@@ -115,6 +118,7 @@ export interface MatchState {
     gameOver: boolean;
     winner: 'A' | 'B' | null;
     scoreHistory: { a: number, b: number }[];
+    eventHistory?: ScoreEvent[];
     scoreLocations: any[];
     status?: 'in_progress' | 'completed';
     timeout: { team: 'A' | 'B', timeLeft: number } | null;

@@ -9,7 +9,7 @@ import TeamEmblem from '../components/TeamEmblem';
 
 interface ScoreboardProps {
     onBackToMenu: () => void;
-    mode: 'record' | 'referee';
+    mode: 'record';
 }
 
 type PendingAction = {
@@ -20,8 +20,7 @@ type PendingAction = {
 export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode }) => {
     const { 
         matchState, matchTime, timerOn, dispatch, setTimerOn,
-        p2p,
-        matchHistory, saveMatchHistory, showToast, endSession
+        matchHistory, saveMatchHistory, showToast
     } = useData();
 
     const [showRulesModal, setShowRulesModal] = useState(false);
@@ -34,7 +33,7 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
     }, [matchState?.servingTeam, timerOn, matchTime, matchState?.gameOver, setTimerOn]);
     
     useEffect(() => {
-        if (!p2p.isHost || !matchState?.timeout) return;
+        if (!matchState?.timeout) return;
         const timerId = setInterval(() => {
             if (matchState?.timeout) {
                 const newTimeLeft = matchState.timeout.timeLeft - 1;
@@ -48,7 +47,7 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
             }
         }, 1000);
         return () => clearInterval(timerId);
-    }, [p2p.isHost, matchState?.timeout, dispatch, setTimerOn, matchState?.gameOver, showToast]);
+    }, [matchState?.timeout, dispatch, setTimerOn, matchState?.gameOver, showToast]);
 
 
     const formatTime = (timeInSeconds: number) => {
@@ -72,7 +71,7 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
         const finalResult = { ...matchState, status: 'completed' as const, date: new Date().toISOString(), time: matchTime };
         const newHistory = [finalResult, ...matchHistory];
         await saveMatchHistory(newHistory, '최종 경기 기록이 저장되었습니다!');
-        endSession();
+        onBackToMenu(); // Go back to menu after saving
     };
 
     const handleCloseTimeout = () => {
@@ -158,7 +157,7 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
 
     return (
         <div className="w-full max-w-7xl mx-auto flex flex-col gap-6 flex-grow animate-fade-in relative">
-            {matchState.timeout && p2p.isHost && (
+            {matchState.timeout && (
                 <TimeoutModal 
                     timeLeft={matchState.timeout.timeLeft} 
                     onClose={handleCloseTimeout} 
@@ -190,20 +189,13 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
                 <div className="text-center">
                     {matchState.isDeuce && !matchState.gameOver && <p className="text-yellow-400 font-bold text-lg animate-pulse mt-2 md:mt-0">듀스! 2점 차로 승리!</p>}
                 </div>
-                 {p2p.isHost && (
-                    <div className="flex items-center justify-center md:justify-end gap-2 mt-2 md:mt-0">
-                        {matchState.gameOver && mode === 'record' ? (
-                            <button onClick={handleSaveFinalResult} className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg">
-                                최종 기록 저장
-                            </button>
-                        ) : p2p.sessionId && (
-                             <div className="text-center bg-slate-800 p-2 rounded-lg">
-                                 <label className="text-xs text-slate-400">참여 코드</label>
-                                 <p className="font-mono text-lg text-white tracking-widest">{p2p.sessionId}</p>
-                            </div>
-                        )}
-                    </div>
-                )}
+                <div className="flex items-center justify-center md:justify-end gap-2 mt-2 md:mt-0">
+                    {matchState.gameOver && mode === 'record' && (
+                        <button onClick={handleSaveFinalResult} className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg">
+                            최종 기록 저장
+                        </button>
+                    )}
+                </div>
             </div>
 
             {matchState.gameOver && (() => {
@@ -219,7 +211,7 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
                 }
 
                 return (
-                    <div className="text-center bg-[#00A3FF]/20 border border-[#00A3FF] p-4 rounded-lg">
+                    <div className="text-center bg-[#00A3FF]/20 border border-[#00A3FF] p-4 rounded-lg space-y-2">
                         <h3 className="text-2xl font-bold text-[#00A3FF]">경기 종료! {winnerMessage}</h3>
                         <p className="text-lg mt-1">
                             <span className="font-bold">{matchState.teamA.name} 총점: {finalScoreA}</span>
@@ -229,6 +221,19 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
                         <p className="text-sm text-slate-400 mt-1">
                             (총점 = 경기 점수 {matchState.teamA.score}:{matchState.teamB.score} + 페어플레이 + 3단 플레이)
                         </p>
+                        {matchState.eventHistory && matchState.eventHistory.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-[#00A3FF]/30 text-left max-h-48 overflow-y-auto">
+                                <h4 className="font-bold text-lg text-slate-200 mb-2 text-center">경기 타임라인</h4>
+                                <ul className="space-y-1 text-sm">
+                                    {matchState.eventHistory.map((event, index) => (
+                                        <li key={index} className="flex items-start gap-3 p-1 rounded-md odd:bg-slate-800/20">
+                                            <span className="font-mono text-slate-400 w-16 text-right">[{event.score.a}:{event.score.b}]</span>
+                                            <span className="text-slate-200 flex-grow">{event.description}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                     </div>
                 );
             })()}

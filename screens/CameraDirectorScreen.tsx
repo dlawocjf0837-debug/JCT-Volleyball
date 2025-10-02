@@ -10,7 +10,8 @@ const formatTime = (seconds: number) => {
 };
 
 const CameraDirectorScreen: React.FC = () => {
-    const { matchState, p2p } = useData();
+    // FIX: Removed p2p from useData as it's not defined in the context.
+    const { matchState } = useData();
     const videoRef = useRef<HTMLVideoElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -201,9 +202,7 @@ const CameraDirectorScreen: React.FC = () => {
     };
     
     const renderMatchInfo = () => {
-        if (!p2p.isHost && !p2p.isConnected) {
-            return <p className="text-lg font-bold text-red-500">호스트와의 연결이 끊어졌습니다.</p>;
-        }
+        // FIX: Removed check for p2p connection status as p2p is not in DataContext.
         if (!matchState) {
             return <p className="text-slate-400">진행 중인 경기가 없습니다. 다른 기기에서 경기를 시작해주세요.</p>;
         }

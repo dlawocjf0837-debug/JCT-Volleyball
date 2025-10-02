@@ -41,8 +41,7 @@ export default function MatchSetupScreen({ onStartMatch }: MatchSetupScreenProps
 
     const availableClasses = useMemo(() => {
         const classNames = new Set(flattenedTeams.map(t => t.className).filter(Boolean));
-        // FIX: Add explicit types to sort callback parameters to prevent them from being inferred as `unknown`.
-        return Array.from(classNames).sort((a: string, b: string) => {
+        return Array.from(classNames).sort((a, b) => {
             if (a === '전체') return -1;
             if (b === '전체') return 1;
             return a.localeCompare(b);

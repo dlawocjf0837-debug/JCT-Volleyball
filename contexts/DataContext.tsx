@@ -1,6 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useReducer, useRef } from 'react';
-import Peer, { DataConnection } from 'peerjs';
-import { MatchState, TeamSet, TeamMatchState, Player, PlayerStats, Action, UserEmblem } from '../types';
+import { MatchState, TeamSet, TeamMatchState, Player, PlayerStats, Action, UserEmblem, ScoreEvent } from '../types';
 
 const TEAM_SETS_KEY = 'jct_volleyball_team_sets';
 const MATCH_HISTORY_KEY = 'jct_volleyball_match_history';
@@ -17,31 +16,6 @@ const getLatestTeamInfo = (teamKey: string) => {
     const set = staticTeamSets.find(s => s.id === setId);
     return set?.teams.find(t => t.teamName === teamName) || null;
 };
-
-
-// --- P2P and Match State Types ---
-type P2PState = {
-    peer: Peer | null;
-    connections: DataConnection[];
-    sessionId: string | null;
-    isHost: boolean;
-    isConnected: boolean;
-    isConnecting: boolean;
-    error: string | null;
-};
-
-// Represents the complete data state on the client
-type LiveMatchData = {
-    match: MatchState | null;
-    time: number;
-    teamSets: TeamSet[];
-    userEmblems: UserEmblem[];
-};
-
-// Define explicit message types for P2P communication
-type FullSyncPayload = { type: 'FULL_SYNC', data: LiveMatchData };
-type MatchUpdatePayload = { type: 'MATCH_UPDATE', data: { match: MatchState | null, time: number } };
-type P2PMessage = FullSyncPayload | MatchUpdatePayload;
 
 
 type ToastState = {
@@ -86,6 +60,7 @@ const getInitialState = (teams: {
         gameOver: false,
         winner: null,
         scoreHistory: [{ a: 0, b: 0 }],
+        eventHistory: [],
         scoreLocations: [],
         status: 'in_progress',
         timeout: null,
@@ -115,7 +90,7 @@ function matchReducer(state: MatchState | null, action: Action): MatchState | nu
             return null;
         default:
             if (!state) return null;
-            let newState = { ...state };
+            let newState = { ...state, eventHistory: [...(state.eventHistory || [])] };
             let scoreChanged = false;
 
             switch (action.type) {
@@ -124,23 +99,47 @@ function matchReducer(state: MatchState | null, action: Action): MatchState | nu
                     const newScore = Math.max(0, newState[target].score + action.amount);
                     if (newState[target].score !== newScore) {
                         newState[target] = { ...newState[target], score: newScore };
-                        if (action.amount > 0) newState.servingTeam = action.team;
                         scoreChanged = true;
+                        if (action.amount > 0) {
+                            newState.servingTeam = action.team;
+                            const event: ScoreEvent = {
+                                team: action.team,
+                                type: 'SCORE',
+                                description: `${newState[target].name}이(가) 득점했습니다.`,
+                                score: { a: newState.teamA.score, b: newState.teamB.score }
+                            };
+                            newState.eventHistory.push(event);
+                        }
                     }
                     break;
                 }
                  case 'SERVICE_ACE': {
                     const { team, playerId } = action;
                     const target = team === 'A' ? 'teamA' : 'teamB';
+                    
                     newState[target] = {
                         ...newState[target],
                         score: newState[target].score + 1,
                         serviceAces: newState[target].serviceAces + 1,
+                        playerStats: updatePlayerStat(
+                            updatePlayerStat(newState[target].playerStats, playerId, 'serviceAces', 1),
+                            playerId, 'points', 1
+                        )
                     };
-                    newState[target].playerStats = updatePlayerStat(newState[target].playerStats, playerId, 'serviceAces', 1);
-                    newState[target].playerStats = updatePlayerStat(newState[target].playerStats, playerId, 'points', 1);
                     newState.servingTeam = team;
                     scoreChanged = true;
+                    
+                    const scoringPlayer = newState[target].players[playerId];
+                    if (scoringPlayer) {
+                        const event: ScoreEvent = {
+                            team: team,
+                            scoringPlayerId: playerId,
+                            type: 'SERVICE_ACE',
+                            description: `${scoringPlayer.originalName} 선수가 서브 에이스로 득점했습니다!`,
+                            score: { a: newState.teamA.score, b: newState.teamB.score }
+                        };
+                        newState.eventHistory.push(event);
+                    }
                     break;
                 }
                 case 'SERVICE_FAULT': {
@@ -158,34 +157,75 @@ function matchReducer(state: MatchState | null, action: Action): MatchState | nu
                     newState[scoringTarget] = { ...newState[scoringTarget], score: newState[scoringTarget].score + 1 };
                     newState.servingTeam = scoringTeamKey;
                     scoreChanged = true;
+
+                    const faultingPlayer = newState[faultingTarget].players[playerId];
+                    if (faultingPlayer) {
+                        const event: ScoreEvent = {
+                            team: scoringTeamKey,
+                            type: 'OPPONENT_FAULT',
+                            description: `${faultingPlayer.originalName} 선수의 서브 범실로 ${newState[scoringTarget].name}이(가) 득점했습니다.`,
+                            score: { a: newState.teamA.score, b: newState.teamB.score }
+                        };
+                        newState.eventHistory.push(event);
+                    }
                     break;
                 }
                 case 'BLOCKING_POINT': {
                     const { team, playerId } = action;
                     const target = team === 'A' ? 'teamA' : 'teamB';
+                    
                     newState[target] = {
                         ...newState[target],
                         score: newState[target].score + 1,
                         blockingPoints: newState[target].blockingPoints + 1,
+                        playerStats: updatePlayerStat(
+                            updatePlayerStat(newState[target].playerStats, playerId, 'blockingPoints', 1),
+                            playerId, 'points', 1
+                        )
                     };
-                    newState[target].playerStats = updatePlayerStat(newState[target].playerStats, playerId, 'blockingPoints', 1);
-                    newState[target].playerStats = updatePlayerStat(newState[target].playerStats, playerId, 'points', 1);
                     newState.servingTeam = team;
                     scoreChanged = true;
+                    
+                    const scoringPlayer = newState[target].players[playerId];
+                    if (scoringPlayer) {
+                        const event: ScoreEvent = {
+                            team: team,
+                            scoringPlayerId: playerId,
+                            type: 'BLOCKING_POINT',
+                            description: `${scoringPlayer.originalName} 선수가 블로킹으로 득점했습니다!`,
+                            score: { a: newState.teamA.score, b: newState.teamB.score }
+                        };
+                        newState.eventHistory.push(event);
+                    }
                     break;
                 }
                 case 'SPIKE_SUCCESS': {
                     const { team, playerId } = action;
                     const target = team === 'A' ? 'teamA' : 'teamB';
+
                     newState[target] = {
                         ...newState[target],
                         score: newState[target].score + 1,
                         spikeSuccesses: newState[target].spikeSuccesses + 1,
+                        playerStats: updatePlayerStat(
+                            updatePlayerStat(newState[target].playerStats, playerId, 'spikeSuccesses', 1),
+                            playerId, 'points', 1
+                        )
                     };
-                    newState[target].playerStats = updatePlayerStat(newState[target].playerStats, playerId, 'spikeSuccesses', 1);
-                    newState[target].playerStats = updatePlayerStat(newState[target].playerStats, playerId, 'points', 1);
                     newState.servingTeam = team;
                     scoreChanged = true;
+                    
+                    const scoringPlayer = newState[target].players[playerId];
+                    if (scoringPlayer) {
+                        const event: ScoreEvent = {
+                            team: team,
+                            scoringPlayerId: playerId,
+                            type: 'SPIKE_SUCCESS',
+                            description: `${scoringPlayer.originalName} 선수가 스파이크로 득점했습니다!`,
+                            score: { a: newState.teamA.score, b: newState.teamB.score }
+                        };
+                        newState.eventHistory.push(event);
+                    }
                     break;
                 }
                 case 'TAKE_TIMEOUT': {
@@ -290,70 +330,18 @@ interface DataContextType {
     clearInProgressMatch: () => void;
     reloadData: () => Promise<void>;
     exportData: () => void;
+    importDataFromFile: (file: File) => void;
     saveImportedData: (data: { teamSets: TeamSet[], matchHistory: (MatchState & { date: string; time?: number })[], userEmblems?: UserEmblem[] }) => void;
     showToast: (message: string, type?: 'success' | 'error') => void;
     hideToast: () => void;
     resetAllData: () => void;
-    p2p: P2PState;
-    startHostSession: (teams?: { teamA: string, teamB: string, teamAKey?: string, teamBKey?: string }, existingState?: MatchState, attendingPlayers?: { teamA: Record<string, Player>, teamB: Record<string, Player>}) => Promise<string | undefined>;
-    joinPeerSession: (sessionId: string) => void;
-    endSession: () => void;
+    startMatch: (teams?: { teamA: string, teamB: string, teamAKey?: string, teamBKey?: string }, existingState?: MatchState & { time?: number }, attendingPlayers?: { teamA: Record<string, Player>, teamB: Record<string, Player>}) => void;
     recoveryData: any | null;
     handleRestoreFromBackup: () => void;
     dismissRecovery: () => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
-
-// FIX: Removed dynamic property assignment to React Context object.
-// The getLatestTeamInfo function is now a standalone function at the top of the file.
-
-
-const slimDownMatchStateForP2P = (match: MatchState | null): MatchState | null => {
-    if (!match) return null;
-    const slimMatch = JSON.parse(JSON.stringify(match));
-    if (slimMatch.teamA) delete slimMatch.teamA.players;
-    if (slimMatch.teamB) delete slimMatch.teamB.players;
-    return slimMatch;
-};
-
-const reconstructMatchStateFromSlim = (slimMatch: MatchState | null, relevantTeamSets: TeamSet[]): MatchState | null => {
-    if (!slimMatch) return null;
-
-    const hydratedMatch = JSON.parse(JSON.stringify(slimMatch));
-
-    const hydrateTeam = (teamState: TeamMatchState) => {
-        if (!teamState.key) {
-            teamState.players = {};
-            return;
-        }
-        const [setId] = teamState.key.split('___');
-        const set = relevantTeamSets.find(s => s.id === setId);
-        if (!set) {
-            teamState.players = {};
-            return;
-        }
-
-        const participatingPlayerIds = Object.keys(teamState.playerStats || {});
-        const hydratedPlayers: Record<string, Player> = {};
-        participatingPlayerIds.forEach(id => {
-            if (set.players[id]) {
-                hydratedPlayers[id] = set.players[id];
-            }
-        });
-        teamState.players = hydratedPlayers;
-    };
-
-    if (hydratedMatch.teamA) {
-        hydrateTeam(hydratedMatch.teamA);
-    }
-    if (hydratedMatch.teamB) {
-        hydrateTeam(hydratedMatch.teamB);
-    }
-    
-    return hydratedMatch;
-};
-
 
 export const DataProvider = ({ children }: { children: ReactNode }) => {
     const [teamSets, setTeamSets] = useState<TeamSet[]>([]);
@@ -363,28 +351,16 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const [toast, setToast] = useState<ToastState>({ message: '', type: 'success' });
     const [recoveryData, setRecoveryData] = useState<any | null>(null);
 
-    // Centralized match state for the HOST
+    // Centralized match state
     const [matchState, dispatch] = useReducer(matchReducer, null);
     const [matchTime, setMatchTime] = useState(0);
     const [timerOn, setTimerOn] = useState(false);
-
-    // P2P state
-    const [p2p, setP2p] = useState<P2PState>({ peer: null, connections: [], sessionId: null, isHost: false, isConnected: false, isConnecting: false, error: null });
-    const peerRef = useRef<Peer | null>(null);
-    const connectionsRef = useRef<DataConnection[]>([]);
     
-    // New state for CLIENTS to ensure atomic updates
-    const [clientLiveData, setClientLiveData] = useState<LiveMatchData | null>(null);
-
-    // Refs to hold the latest state for immediate use
-    const matchStateRef = useRef(matchState);
-    const matchTimeRef = useRef(matchTime);
+    // Refs to hold the latest state for immediate use in backups
     const teamSetsRef = useRef(teamSets);
     const userEmblemsRef = useRef(userEmblems);
     const matchHistoryRef = useRef(matchHistory);
     
-    useEffect(() => { matchStateRef.current = matchState; }, [matchState]);
-    useEffect(() => { matchTimeRef.current = matchTime; }, [matchTime]);
     useEffect(() => { 
         teamSetsRef.current = teamSets;
         staticTeamSets = teamSets;
@@ -529,200 +505,59 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         setMatchTime(0);
         setTimerOn(false);
     }, []);
-    
-    // --- P2P Logic ---
-    const endSession = useCallback(() => {
-        if (peerRef.current) {
-            (peerRef.current as any).destroy();
-        }
-        connectionsRef.current.forEach(conn => conn.close());
-        connectionsRef.current = [];
-        peerRef.current = null;
-        setP2p({ peer: null, connections: [], sessionId: null, isHost: false, isConnected: false, isConnecting: false, error: null });
-        clearInProgressMatch();
-        setClientLiveData(null);
-        showToast('세션이 종료되었습니다.');
-    }, [showToast, clearInProgressMatch]);
 
-    const initializePeer = useCallback((id?: string) => new Promise<Peer>((resolve, reject) => {
-        if (peerRef.current) (peerRef.current as any).destroy();
-        const newPeer = id ? new Peer(id, {}) : new Peer({});
-        peerRef.current = newPeer;
-        (newPeer as any).on('open', (peerId: string) => {
-            setP2p(prev => ({ ...prev, peer: newPeer, sessionId: peerId, error: null }));
-            resolve(newPeer);
-        });
-        (newPeer as any).on('error', (err: any) => {
-            console.error('PeerJS Error:', err);
-            setP2p(prev => ({ ...prev, error: err.message, isConnecting: false }));
-            showToast(`연결 오류: ${err.message}`, 'error');
-            reject(err);
-        });
-        (newPeer as any).on('disconnected', () => {
-             showToast('연결 서버와의 접속이 끊겼습니다. 재연결을 시도합니다...');
-             if (!(newPeer as any).destroyed) (newPeer as any).reconnect();
-        });
-    }), [showToast]);
-
-    const startHostSession = useCallback(async (
+    const startMatch = useCallback((
         teams?: { teamA: string, teamB: string, teamAKey?: string, teamBKey?: string },
-        existingState?: MatchState,
+        existingState?: MatchState & { time?: number },
         attendingPlayers?: { teamA: Record<string, Player>, teamB: Record<string, Player> }
     ) => {
-        try {
-            const peer = await initializePeer();
+        let stateToLoad: MatchState | null = null;
+        if (existingState) {
+            stateToLoad = existingState;
+        } else if (teams) {
+            const getTeamDetails = (teamKey: string | undefined) => {
+                if (!teamKey) return { players: {}, details: {} };
+                const [setId, teamName] = teamKey.split('___');
+                const set = teamSetsRef.current.find(s => s.id === setId);
+                const teamInfo = set?.teams.find(t => t.teamName === teamName);
+                if (!set || !teamInfo) return { players: {}, details: {} };
 
-            let stateToLoad: MatchState | null = null;
+                const allPlayersInTeam = teamInfo.playerIds.reduce((acc, id) => {
+                    if (set.players[id]) acc[id] = set.players[id];
+                    return acc;
+                }, {} as Record<string, Player>);
 
-            if (existingState) {
-                stateToLoad = existingState;
-            } else if (teams) {
-                const getTeamDetails = (teamKey: string | undefined) => {
-                    if (!teamKey) return { players: {}, details: {} };
-                    const [setId, teamName] = teamKey.split('___');
-                    const set = teamSetsRef.current.find(s => s.id === setId);
-                    const teamInfo = set?.teams.find(t => t.teamName === teamName);
-                    if (!set || !teamInfo) return { players: {}, details: {} };
+                const { teamName: _t, captainId: _c, playerIds: _p, ...details } = teamInfo;
 
-                    const allPlayersInTeam = teamInfo.playerIds.reduce((acc, id) => {
-                        if (set.players[id]) acc[id] = set.players[id];
-                        return acc;
-                    }, {} as Record<string, Player>);
-
-                    const { teamName: _t, captainId: _c, playerIds: _p, ...details } = teamInfo;
-
-                    return { 
-                        players: allPlayersInTeam,
-                        details: details,
-                    };
+                return { 
+                    players: allPlayersInTeam,
+                    details: details,
                 };
-
-                const teamADetails = getTeamDetails(teams.teamAKey);
-                const teamBDetails = getTeamDetails(teams.teamBKey);
-
-                stateToLoad = getInitialState({
-                    ...teams,
-                    teamAPlayers: attendingPlayers ? attendingPlayers.teamA : teamADetails.players,
-                    teamBPlayers: attendingPlayers ? attendingPlayers.teamB : teamBDetails.players,
-                    teamADetails: teamADetails.details,
-                    teamBDetails: teamBDetails.details,
-                });
-            }
-
-            if (stateToLoad) dispatch({ type: 'LOAD_STATE', state: stateToLoad });
-            
-            setMatchTime(0);
+            };
+            const teamADetails = getTeamDetails(teams.teamAKey);
+            const teamBDetails = getTeamDetails(teams.teamBKey);
+            stateToLoad = getInitialState({
+                ...teams,
+                teamAPlayers: attendingPlayers ? attendingPlayers.teamA : teamADetails.players,
+                teamBPlayers: attendingPlayers ? attendingPlayers.teamB : teamBDetails.players,
+                teamADetails: teamADetails.details,
+                teamBDetails: teamBDetails.details,
+            });
+        }
+        if (stateToLoad) {
+            dispatch({ type: 'LOAD_STATE', state: stateToLoad });
+            setMatchTime(existingState?.time || 0);
             setTimerOn(!!stateToLoad?.servingTeam && !stateToLoad?.gameOver);
-
-            setP2p(prev => ({ ...prev, isHost: true, isConnected: true, isConnecting: false }));
-            
-            (peer as any).on('connection', (conn: DataConnection) => {
-                showToast(`'${(conn as any).peer}'님이 참가했습니다.`, 'success');
-                (conn as any).on('close', () => {
-                    connectionsRef.current = connectionsRef.current.filter(c => c.peer !== conn.peer);
-                    setP2p(prev => ({ ...prev, connections: connectionsRef.current }));
-                    showToast(`'${(conn as any).peer}'님과의 연결이 끊어졌습니다.`);
-                });
-                
-                (conn as any).on('open', () => {
-                    connectionsRef.current = [...connectionsRef.current, conn];
-                    setP2p(prev => ({ ...prev, connections: connectionsRef.current }));
-
-                    setTimeout(() => {
-                        const currentMatchState = matchStateRef.current;
-                        const relevantTeamSetIds = new Set<string>();
-                        if (currentMatchState?.teamA.key) relevantTeamSetIds.add(currentMatchState.teamA.key.split('___')[0]);
-                        if (currentMatchState?.teamB.key) relevantTeamSetIds.add(currentMatchState.teamB.key.split('___')[0]);
-                        
-                        const relevantTeamSets = teamSetsRef.current.filter(set => relevantTeamSetIds.has(set.id));
-                        const slimInitialMatchState = slimDownMatchStateForP2P(currentMatchState);
-
-                        const initialData: LiveMatchData = {
-                            match: slimInitialMatchState,
-                            time: matchTimeRef.current,
-                            teamSets: relevantTeamSets,
-                            userEmblems: userEmblemsRef.current,
-                        };
-                        const message: FullSyncPayload = { type: 'FULL_SYNC', data: initialData };
-                        if ((conn as any).open) (conn as any).send(message);
-                    }, 500);
-                });
-            });
-            return (peer as any).id;
-        } catch (error) {
-            console.error("Failed to start host session:", error);
-            return undefined;
         }
-    }, [initializePeer, showToast]);
-
-    const joinPeerSession = useCallback(async (sessionId: string) => {
-        try {
-            setP2p(prev => ({ ...prev, isConnecting: true }));
-            const peer = await initializePeer();
-            const conn = (peer as any).connect(sessionId, { reliable: true, serialization: 'json' });
-
-            (conn as any).on('open', () => {
-                showToast(`호스트 '${sessionId}'에 연결되었습니다.`, 'success');
-                setP2p(prev => ({ ...prev, isHost: false, isConnected: true, isConnecting: false, connections: [conn] }));
-                connectionsRef.current = [conn];
-            });
-
-            (conn as any).on('data', (data: any) => {
-                const message = data as P2PMessage;
-                if (message.type === 'FULL_SYNC') {
-                    const hydratedMatch = reconstructMatchStateFromSlim(message.data.match, message.data.teamSets);
-                    setClientLiveData({
-                        ...message.data,
-                        match: hydratedMatch,
-                    });
-                } else if (message.type === 'MATCH_UPDATE') {
-                    setClientLiveData(prev => {
-                        if (!prev) return null;
-                        const hydratedMatch = reconstructMatchStateFromSlim(message.data.match, prev.teamSets);
-                        return {
-                            ...prev,
-                            match: hydratedMatch,
-                            time: message.data.time,
-                        };
-                    });
-                }
-            });
-
-            (conn as any).on('close', () => {
-                showToast('호스트와의 연결이 끊어졌습니다.', 'error');
-                endSession();
-            });
-            (conn as any).on('error', (err: any) => {
-                console.error("Connection error:", err);
-                showToast(`연결 오류: ${err.message}`, 'error');
-                endSession();
-            });
-        } catch (error: any) {
-            console.error("Failed to join session:", error);
-            showToast(`세션 참여 실패: ${error.message}`, 'error');
-            setP2p(prev => ({ ...prev, isConnecting: false }));
-        }
-    }, [initializePeer, showToast, endSession]);
-
-    useEffect(() => {
-        if (p2p.isHost && connectionsRef.current.length > 0) {
-            const slimMatchState = slimDownMatchStateForP2P(matchState);
-            const updateData = { match: slimMatchState, time: matchTime };
-            const message: MatchUpdatePayload = { type: 'MATCH_UPDATE', data: updateData };
-            
-            connectionsRef.current.forEach(conn => {
-                if ((conn as any).open) (conn as any).send(message);
-            });
-        }
-    }, [matchState, matchTime, p2p.isHost]);
+    }, []);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval> | null = null;
-        if (p2p.isHost && timerOn && matchState && !matchState.gameOver) {
+        if (timerOn && matchState && !matchState.gameOver) {
             interval = setInterval(() => setMatchTime(prev => prev + 1), 1000);
         }
         return () => { if (interval) clearInterval(interval); };
-    }, [timerOn, matchState, p2p.isHost]);
+    }, [timerOn, matchState]);
 
     const exportData = () => {
         try {
@@ -758,6 +593,32 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             showToast('데이터를 적용하는 중 오류가 발생했습니다.', 'error');
         });
     };
+    
+    const importDataFromFile = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const text = event.target?.result;
+                if (typeof text !== 'string') throw new Error("File could not be read.");
+                const data = JSON.parse(text);
+
+                const teamSetsAreValid = data.teamSets && Array.isArray(data.teamSets) && data.teamSets.every(isValidTeamSet);
+                const historyIsValid = data.matchHistory && Array.isArray(data.matchHistory) && data.matchHistory.every((m: any) => m && typeof m.date === 'string' && isValidMatchState(m));
+                const emblemsAreValid = !data.userEmblems || isValidUserEmblems(data.userEmblems);
+
+                if (teamSetsAreValid && historyIsValid && emblemsAreValid) {
+                    saveImportedData(data);
+                } else {
+                    showToast('파일 형식이 올바르지 않거나 데이터가 손상되었습니다.', 'error');
+                }
+            } catch (error) {
+                console.error("Import failed:", error);
+                showToast('데이터를 가져오는 중 오류가 발생했습니다.', 'error');
+            }
+        };
+        reader.onerror = () => showToast('파일을 읽는 데 실패했습니다.', 'error');
+        reader.readAsText(file);
+    };
 
     const resetAllData = useCallback(() => {
         try {
@@ -774,19 +635,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             showToast('데이터 초기화 중 오류가 발생했습니다.', 'error');
         }
     }, [showToast]);
-
-    const isClient = !p2p.isHost && p2p.isConnected;
-    const providedMatchState = isClient ? (clientLiveData?.match ?? null) : matchState;
-    const providedMatchTime = isClient ? (clientLiveData?.time ?? 0) : matchTime;
-    const isClientTimerOn = clientLiveData?.match ? (!clientLiveData.match.gameOver && !!clientLiveData.match.servingTeam) : false;
-    const providedTimerOn = isClient ? isClientTimerOn : timerOn;
-    const providedTeamSets = isClient ? (clientLiveData?.teamSets ?? []) : teamSets;
-    const providedUserEmblems = isClient ? (clientLiveData?.userEmblems ?? []) : userEmblems;
     
     const value: DataContextType = {
-        teamSets: providedTeamSets,
+        teamSets,
         matchHistory,
-        userEmblems: providedUserEmblems,
+        userEmblems,
         isLoading,
         toast,
         saveTeamSets,
@@ -794,20 +647,18 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         saveUserEmblems,
         reloadData: loadAllData,
         exportData,
+        importDataFromFile,
         saveImportedData,
         showToast,
         hideToast,
         resetAllData,
-        matchState: providedMatchState,
-        matchTime: providedMatchTime,
-        timerOn: providedTimerOn,
+        matchState,
+        matchTime,
+        timerOn,
         dispatch,
         setTimerOn,
         clearInProgressMatch,
-        p2p,
-        startHostSession,
-        joinPeerSession,
-        endSession,
+        startMatch,
         recoveryData,
         handleRestoreFromBackup,
         dismissRecovery,
