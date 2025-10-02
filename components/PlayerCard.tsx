@@ -12,6 +12,7 @@ interface PlayerCardProps {
     isComparisonSelected: boolean;
     isCaptainSelectable?: boolean;
     isCaptainSelected?: boolean;
+    onDoubleClick?: (player: Player) => void;
 }
 
 const PlayerCard: React.FC<PlayerCardProps> = ({ 
@@ -23,7 +24,8 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
     onToggleComparison, 
     isComparisonSelected,
     isCaptainSelectable,
-    isCaptainSelected
+    isCaptainSelected,
+    onDoubleClick
 }) => {
     
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
@@ -47,12 +49,13 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
     const baseClasses = 'flex items-center justify-between p-3 rounded-lg shadow-md transition-all duration-150 ease-in-out border-l-4';
     
     let stateClasses = '';
-    let cursorClass = 'cursor-pointer';
+    let cursorClass = '';
     
     const baseBgClass = 'bg-slate-800';
 
     if (player.isCaptain) {
         stateClasses = `border-yellow-400 ${baseBgClass.replace('800', '700')}`;
+        cursorClass = 'cursor-pointer';
     } else if (isDraggable) {
         stateClasses = `border-[#00A3FF] ${baseBgClass}`;
         cursorClass = 'cursor-grab active:cursor-grabbing';
@@ -60,8 +63,14 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
         stateClasses = isCaptainSelected 
             ? 'border-[#00A3FF] bg-[#00A3FF]/10 ring-2 ring-[#00A3FF] shadow-lg shadow-[#00A3FF]/20'
             : `border-slate-600 ${baseBgClass} hover:bg-slate-700`;
+        cursorClass = 'cursor-pointer';
     } else {
         stateClasses = `border-slate-600 ${baseBgClass} hover:bg-slate-700`;
+        cursorClass = 'cursor-pointer';
+    }
+
+    if (onDoubleClick) {
+        cursorClass = 'cursor-pointer';
     }
 
     const genderIcon = player.gender.includes('남') ? '♂' : player.gender.includes('여') ? '♀' : null;
@@ -70,10 +79,11 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
     return (
         <div
             onClick={() => onClick(player)}
+            onDoubleClick={() => onDoubleClick?.(player)}
             draggable={isDraggable}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
-            className={`${baseClasses} ${stateClasses} ${!isDraggable && isCaptainSelectable ? 'cursor-pointer' : ''} ${isDraggable ? cursorClass : ''}`}
+            className={`${baseClasses} ${stateClasses} ${cursorClass}`}
         >
             <div className="flex-grow min-w-0">
                 <div className="flex items-center gap-2">

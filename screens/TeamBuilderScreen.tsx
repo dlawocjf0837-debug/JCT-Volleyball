@@ -5,14 +5,25 @@ import TeamPanel from '../components/TeamPanel';
 import StatModal from '../components/StatModal';
 import ComparisonModal from '../components/ComparisonModal';
 import FinalTeamsScreen from '../components/FinalTeamsScreen';
-import { SparklesIcon, UsersIcon, EyeIcon, EyeSlashIcon, ScaleIcon } from '../components/icons';
-import { GoogleGenAI, Type } from '@google/genai';
+import { UsersIcon, EyeIcon, EyeSlashIcon, ScaleIcon, UndoIcon } from '../components/icons';
 
 interface TeamBuilderScreenProps {
     initialPlayers: Player[];
     onReset: () => void;
     selectedClass: string;
 }
+
+type DraftMove = {
+    playerId: string;
+    teamId: TeamId;
+    previousState: {
+        unassignedPlayerIds: string[];
+        teams: Team[];
+        draftOrder: TeamId[];
+        currentPickIndex: number;
+        draftRound: number;
+    };
+};
 
 const TEAM_COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -27,18 +38,16 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
     const [draftOrder, setDraftOrder] = useState<TeamId[]>([]);
     const [currentPickIndex, setCurrentPickIndex] = useState(0);
     const [draftRound, setDraftRound] = useState(1);
+    const [draftHistory, setDraftHistory] = useState<DraftMove[]>([]);
+
 
     const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
-    const [isAiLoading, setIsAiLoading] = useState(false);
     const [balanceGender, setBalanceGender] = useState(false);
 
     const [showRealNames, setShowRealNames] = useState(false);
     const [comparisonPlayerIds, setComparisonPlayerIds] = useState<Set<string>>(new Set());
     const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
     const [sortKey, setSortKey] = useState<keyof Stats | 'totalScore'>('totalScore');
-
-    // Safely check for API key to prevent crashes in environments without process.env
-    const hasApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY;
 
     useEffect(() => {
         const playerMap = initialPlayers.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
@@ -80,7 +89,8 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
         if (selectedCaptainIds.size !== 4) return;
         
         const updatedPlayers = { ...players };
-        selectedCaptainIds.forEach(id => {
+        // FIX: Add explicit type `string` to `id` to prevent it from being inferred as `unknown`.
+        selectedCaptainIds.forEach((id: string) => {
             if(updatedPlayers[id]) updatedPlayers[id].isCaptain = true;
         });
         
@@ -108,7 +118,45 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
         setUnassignedPlayerIds(Object.keys(players).filter(id => !selectedCaptainIds.has(id)));
         setPhase('drafting');
         setComparisonPlayerIds(new Set());
+        setDraftHistory([]);
     }, [selectedCaptainIds, players]);
+
+    const performDraftPick = useCallback((playerId: string, targetTeamId: TeamId) => {
+        const move: DraftMove = {
+            playerId,
+            teamId: targetTeamId,
+            previousState: {
+                unassignedPlayerIds,
+                teams,
+                draftOrder,
+                currentPickIndex,
+                draftRound,
+            },
+        };
+        setDraftHistory(prev => [...prev, move]);
+
+        const newUnassignedPlayerIds = unassignedPlayerIds.filter(id => id !== playerId);
+        setUnassignedPlayerIds(newUnassignedPlayerIds);
+
+        setTeams(currentTeams => currentTeams.map(t =>
+            t.id === targetTeamId
+            ? { ...t, playerIds: [...t.playerIds, playerId] }
+            : t
+        ));
+
+        const nextPickIndex = currentPickIndex + 1;
+        if (nextPickIndex >= draftOrder.length) {
+            setDraftRound(prev => prev + 1);
+            setDraftOrder(prev => [...prev].reverse());
+            setCurrentPickIndex(0);
+        } else {
+            setCurrentPickIndex(nextPickIndex);
+        }
+
+        if (newUnassignedPlayerIds.length === 0) {
+            setPhase('final');
+        }
+    }, [unassignedPlayerIds, teams, draftOrder, currentPickIndex, draftRound]);
 
     const handleDrop = useCallback((playerId: string, targetTeamId: TeamId) => {
         const currentPickingTeamId = draftOrder[currentPickIndex];
@@ -118,91 +166,35 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
             return;
         }
 
-        // Move player
         if (unassignedPlayerIds.includes(playerId)) {
-            setUnassignedPlayerIds(prev => {
-                const newUnassigned = prev.filter(id => id !== playerId);
-                if (newUnassigned.length === 0) {
-                    setPhase('final');
-                }
-                return newUnassigned;
-            });
-
-            setTeams(currentTeams => currentTeams.map(t => 
-                t.id === targetTeamId
-                ? { ...t, playerIds: [...t.playerIds, playerId] }
-                : t
-            ));
-
-            // Advance draft turn
-            const nextPickIndex = currentPickIndex + 1;
-            if (nextPickIndex >= draftOrder.length) {
-                // End of round
-                setDraftRound(prev => prev + 1);
-                setDraftOrder(prev => [...prev].reverse()); // Reverse for snake draft
-                setCurrentPickIndex(0);
-            } else {
-                setCurrentPickIndex(nextPickIndex);
-            }
+            performDraftPick(playerId, targetTeamId);
         }
-    }, [draftOrder, currentPickIndex, teams, unassignedPlayerIds]);
-
-    const handleAiTeamBuilding = async () => {
-        if (!hasApiKey) {
-            alert("AI 기능을 사용하려면 API 키 설정이 필요합니다. 현재 환경에서는 사용할 수 없습니다.");
-            return;
-        }
-        if (unassignedPlayerIds.length === 0) {
-            alert('모든 선수가 이미 팀에 배정되었습니다.');
-            return;
-        }
-        setIsAiLoading(true);
-
-        const unassigned = unassignedPlayerIds.map(id => players[id]);
-
-        const prompt = `You are a middle school volleyball coach. Your task is to fairly distribute the following unassigned players among the existing teams to balance their average abilities. Captains are already on their teams. ${balanceGender ? 'You must also try to balance the gender ratio (male/female) in each team as much as possible.' : ''}
-            Team Information: ${teams.map(team => `- ${team.name} (Captain: ${players[team.captainId].anonymousName})`).join('\n')}
-            Players to distribute: ${unassigned.map(p => `- ${p.anonymousName} (Gender: ${p.gender}, Total Score: ${p.totalScore.toFixed(1)})`).join('\n')}
-            Return the result in JSON format, assigning an array of player anonymousNames to each team ID.`;
-        
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash', contents: prompt,
-                config: {
-                    responseMimeType: 'application/json',
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: teams.reduce((acc, team) => {
-                            acc[team.id] = { type: Type.ARRAY, items: { type: Type.STRING } };
-                            return acc;
-                        }, {} as any)
-                    }
-                }
-            });
-
-            const result = JSON.parse(response.text);
-            const playerNameToIdMap = Object.values(players).reduce((acc, p) => ({ ...acc, [p.anonymousName]: p.id }), {} as Record<string, string>);
-
-            const newTeams = [...teams];
-            Object.keys(result).forEach(teamId => {
-                const teamIndex = newTeams.findIndex(t => t.id === teamId);
-                if(teamIndex > -1){
-                    const playerIdsToAdd = result[teamId].map((name: string) => playerNameToIdMap[name]).filter(Boolean);
-                    newTeams[teamIndex] = { ...newTeams[teamIndex], playerIds: [...newTeams[teamIndex].playerIds, ...playerIdsToAdd] };
-                }
-            });
-            setTeams(newTeams);
-            setUnassignedPlayerIds([]);
-            setPhase('final');
-        } catch (error) {
-            console.error("AI 팀 구성 오류:", error);
-            alert("AI 팀 구성 중 오류가 발생했습니다. 다시 시도해주세요.");
-        } finally {
-            setIsAiLoading(false);
-        }
-    };
+    }, [draftOrder, currentPickIndex, teams, unassignedPlayerIds, performDraftPick]);
     
+    const handleDoubleClickDraft = useCallback((player: Player) => {
+        if (phase !== 'drafting') return;
+        const currentPickingTeamId = draftOrder[currentPickIndex];
+        if (!currentPickingTeamId || !unassignedPlayerIds.includes(player.id)) {
+            return;
+        }
+        performDraftPick(player.id, currentPickingTeamId);
+    }, [phase, draftOrder, currentPickIndex, unassignedPlayerIds, performDraftPick]);
+
+    const handleUndo = useCallback(() => {
+        if (draftHistory.length === 0) return;
+
+        const lastMove = draftHistory[draftHistory.length - 1];
+        
+        setUnassignedPlayerIds(lastMove.previousState.unassignedPlayerIds);
+        setTeams(lastMove.previousState.teams);
+        setDraftOrder(lastMove.previousState.draftOrder);
+        setCurrentPickIndex(lastMove.previousState.currentPickIndex);
+        setDraftRound(lastMove.previousState.draftRound);
+        
+        setDraftHistory(prev => prev.slice(0, -1));
+
+    }, [draftHistory]);
+
     const handleTeamNameChange = useCallback((teamId: TeamId, newName: string) => {
         setTeams(currentTeams => currentTeams.map(t => t.id === teamId ? { ...t, name: newName } : t));
     }, []);
@@ -252,7 +244,9 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
     const getStatLeaders = (statKey: keyof Stats | 'total') => {
         let max = -1, leaders: TeamId[] = [];
         Object.entries(teamAverages).forEach(([teamId, data]) => {
-            const value = statKey === 'total' ? data.total : data.stats[statKey];
+            // FIX: Cast `data` to its expected type to resolve properties not existing on `unknown`.
+            const typedData = data as { stats: Record<keyof Stats, number>, total: number };
+            const value = statKey === 'total' ? typedData.total : typedData.stats[statKey as keyof Stats];
             if (value > max) { max = value; leaders = [teamId]; } 
             else if (value.toFixed(1) === max.toFixed(1)) { leaders.push(teamId); }
         });
@@ -285,10 +279,16 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
     const controlPanel = (
          <div className="flex items-center gap-2 flex-wrap">
             {phase === 'drafting' && (
-                <button onClick={() => setShowRealNames(!showRealNames)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
-                    {showRealNames ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
-                    {showRealNames ? '이름 숨기기' : '이름 보기'}
-                </button>
+                <>
+                    <button onClick={() => setShowRealNames(!showRealNames)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        {showRealNames ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                        {showRealNames ? '이름 숨기기' : '이름 보기'}
+                    </button>
+                    <button onClick={handleUndo} disabled={draftHistory.length === 0} className="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed">
+                        <UndoIcon className="w-5 h-5" />
+                        되돌리기
+                    </button>
+                </>
             )}
              <button onClick={() => setIsComparisonModalOpen(true)} disabled={comparisonPlayerIds.size !== 2} className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed">
                 <ScaleIcon className="w-5 h-5" />
@@ -296,14 +296,6 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
             </button>
              {phase === 'drafting' && (
                 <>
-                    <button 
-                        onClick={handleAiTeamBuilding} 
-                        disabled={!hasApiKey || isAiLoading || unassignedPlayerIds.length === 0} 
-                        title={!hasApiKey ? "API 키가 설정되지 않아 AI 기능을 사용할 수 없습니다." : ""}
-                        className="flex items-center gap-2 bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed">
-                        <SparklesIcon className="w-5 h-5" />
-                        {isAiLoading ? '팀 구성 중...' : 'AI로 팀 자동 구성'}
-                    </button>
                     <label htmlFor="gender-balance-toggle" className="flex items-center cursor-pointer p-2 rounded-lg hover:bg-slate-700">
                         <UsersIcon className="w-5 h-5 mr-2 text-pink-400"/>
                         <span className="font-semibold text-slate-300">성별 균형</span>
@@ -433,6 +425,7 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
                             key={p.id} 
                             player={p} 
                             onClick={() => {}} 
+                            onDoubleClick={handleDoubleClickDraft}
                             onViewStats={handleViewStats}
                             isDraggable={!p.isCaptain} 
                             showRealNames={showRealNames} 
@@ -443,7 +436,7 @@ const TeamBuilderScreen: React.FC<TeamBuilderScreenProps> = ({ initialPlayers, o
                 </TeamPanel>
                 {teams.map(team => (
                      <TeamPanel key={team.id} teamId={team.id} name={team.name} playerCount={team.playerIds.length} color={team.color} onDrop={handleDrop} onNameChange={handleTeamNameChange} isCurrentPick={team.id === currentPickingTeam?.id}>
-                        {team.playerIds.map(id => players[id]).filter(Boolean).sort((a,b) => b.isCaptain ? 1 : -1).map(p => (
+                        {team.playerIds.map(id => players[id]).filter(Boolean).sort((a, b) => Number(b.isCaptain) - Number(a.isCaptain)).map(p => (
                              <PlayerCard 
                                 key={p.id} 
                                 player={p} 

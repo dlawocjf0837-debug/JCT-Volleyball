@@ -1,8 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { MatchState, SavedTeamInfo } from '../types';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { MatchState, SavedTeamInfo, TeamMatchState, PlayerStats, Player, TeamSet } from '../types';
 import { useData } from '../contexts/DataContext';
-import { CrownIcon } from '../components/icons';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { CrownIcon, TrophyIcon, FireIcon, SparklesIcon, MedalIcon } from '../components/icons';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import PlayerHistoryModal from '../components/PlayerHistoryModal';
+import TeamEmblem from '../components/TeamEmblem';
 
 interface RecordScreenProps {
     onContinueGame: (state: MatchState) => void;
@@ -14,11 +16,117 @@ type EnrichedMatch = MatchState & {
     time?: number;
 };
 
+// --- New Types for In-depth Analysis ---
+type MvpResult = {
+    player: Player;
+    team: TeamMatchState;
+    stats: PlayerStats;
+    mvpScore: number;
+    scoreBreakdown: Record<string, number>;
+} | null;
+
+type TimelineEvent = {
+    type: 'STREAK' | 'LEAD_CHANGE' | 'DEUCE' | 'MATCH_POINT';
+    team: 'A' | 'B' | null;
+    description: string;
+    score: string;
+};
+
+type MatchLeaders = {
+    points: { player: Player; value: number }[];
+    serviceAces: { player: Player; value: number }[];
+    blockingPoints: { player: Player; value: number }[];
+};
+
+
 interface FlattenedTeam extends SavedTeamInfo {
     className: string;
     captain: string;
     players: string[];
 }
+
+const PlayerStatsTable: React.FC<{ 
+    teamMatchState: TeamMatchState; 
+    onPlayerClick: (player: Player) => void;
+    teamSet: TeamSet | undefined;
+}> = ({ teamMatchState, onPlayerClick, teamSet }) => {
+    const { players: participatingPlayers, playerStats } = teamMatchState;
+
+    const fullRoster = useMemo(() => {
+        const teamInfo = teamSet?.teams.find(t => t.teamName === teamMatchState.name);
+        if (!teamSet || !teamInfo) {
+            // Fallback for manually created teams or old data without a proper link
+            return Object.values(participatingPlayers);
+        }
+        return teamInfo.playerIds.map(id => teamSet.players[id]).filter(Boolean);
+    }, [teamSet, teamMatchState.name, participatingPlayers]);
+
+    if (fullRoster.length === 0) {
+        return (
+            <div className="bg-slate-800/50 p-4 rounded-lg">
+                <div className="flex items-center gap-3 mb-3">
+                    <TeamEmblem emblem={teamMatchState.emblem} color={teamMatchState.color} className="w-8 h-8" />
+                    <h4 className="font-bold text-xl text-slate-300">{teamMatchState.name} 선수 기록</h4>
+                </div>
+                <p className="text-slate-500">이 경기에 대한 선수별 기록이 없습니다.</p>
+            </div>
+        );
+    }
+
+    const statOrder: (keyof PlayerStats)[] = ['points', 'serviceAces', 'spikeSuccesses', 'blockingPoints', 'serviceFaults'];
+    const statHeaderNames: Record<keyof PlayerStats, string> = {
+        points: '득점',
+        serviceAces: '서브',
+        spikeSuccesses: '스파이크',
+        blockingPoints: '블로킹',
+        serviceFaults: '범실',
+    };
+    
+    return (
+        <div className="bg-slate-800/50 p-4 rounded-lg">
+            <div className="flex items-center gap-3 mb-3">
+                <TeamEmblem emblem={teamMatchState.emblem} color={teamMatchState.color} className="w-8 h-8" />
+                <div>
+                    <h4 className="font-bold text-xl text-slate-300">{teamMatchState.name}</h4>
+                    {teamMatchState.slogan && <p className="text-xs italic" style={{ color: teamMatchState.color }}>"{teamMatchState.slogan}"</p>}
+                </div>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-center text-sm">
+                    <thead>
+                        <tr className="border-b-2 border-slate-600 text-slate-300">
+                            <th className="p-2 text-left">선수</th>
+                            {statOrder.map(key => <th key={key} className="p-2">{statHeaderNames[key]}</th>)}
+                        </tr>
+                    </thead>
+                    <tbody className="font-mono text-slate-200">
+                        {fullRoster.map(player => {
+                            const didParticipate = player.id in participatingPlayers;
+                            const stats = didParticipate ? playerStats?.[player.id] : null;
+
+                            return (
+                             <tr key={player.id} className="border-b border-slate-700">
+                                <td className="p-2 text-left font-sans text-slate-400 font-semibold">
+                                     <button onClick={() => onPlayerClick(player)} className="text-left hover:text-sky-400 transition-colors" aria-label={`${player.originalName} 상세 기록 보기`}>
+                                        {player.originalName || '알 수 없음'}
+                                    </button>
+                                </td>
+                                {didParticipate && stats ? (
+                                    statOrder.map(key => <td key={key} className="p-2">{stats[key] || 0}</td>)
+                                ) : (
+                                    <td colSpan={statOrder.length} className="p-2 text-center text-slate-500 font-sans italic">
+                                        참여하지 않음
+                                    </td>
+                                )}
+                            </tr>
+                        )})}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    )
+};
+
 
 const RankingsModal: React.FC<{
     isOpen: boolean;
@@ -52,6 +160,159 @@ const RankingsModal: React.FC<{
     );
 };
 
+const ScoreTrendChart: React.FC<{ match: EnrichedMatch }> = ({ match }) => {
+    const chartData = useMemo(() => {
+        if (!match.scoreHistory) return [];
+        return match.scoreHistory.map((score, index) => ({
+            point: index,
+            [match.teamA.name]: score.a,
+            [match.teamB.name]: score.b,
+        }));
+    }, [match.scoreHistory, match.teamA.name, match.teamB.name]);
+
+    return (
+        <div className="bg-slate-800/50 p-4 rounded-lg h-80">
+             <h4 className="text-lg font-bold text-center text-slate-300 mb-2">득점 추이</h4>
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="point" label={{ value: '진행', position: 'insideBottom', offset: -10 }} stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                    <YAxis allowDecimals={false} stroke="#94a3b8" tick={{ fill: '#94a3b8' }}/>
+                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
+                    <Legend verticalAlign="top" />
+                    <Line type="monotone" dataKey={match.teamA.name} stroke={match.teamA.color || "#38bdf8"} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey={match.teamB.name} stroke={match.teamB.color || "#f87171"} strokeWidth={2} dot={false} />
+                </LineChart>
+            </ResponsiveContainer>
+        </div>
+    );
+};
+
+
+// --- New Analysis Components ---
+const MvpCard: React.FC<{ mvp: MvpResult }> = ({ mvp }) => {
+    if (!mvp) {
+        return (
+            <div className="bg-slate-800/50 p-4 rounded-lg text-center text-slate-500 h-full flex items-center justify-center">
+                선수별 데이터가 부족하여 MVP를 선정할 수 없습니다.
+            </div>
+        );
+    }
+
+    const { player, team, stats, mvpScore, scoreBreakdown } = mvp;
+
+    return (
+        <div className="bg-gradient-to-br from-yellow-800/30 via-slate-900/50 to-slate-900/50 p-6 rounded-lg border-2 border-yellow-400/80 shadow-2xl shadow-yellow-500/10 flex flex-col items-center justify-center text-center">
+            
+            <div className="flex items-center gap-3">
+                 <CrownIcon className="w-8 h-8 text-yellow-300" />
+                 <h3 className="text-2xl font-bold text-yellow-300 tracking-widest">경기 MVP</h3>
+            </div>
+            
+            <p className="text-5xl font-black text-white my-4 drop-shadow-lg">{player.originalName}</p>
+            <div className="flex items-center gap-2 text-base font-semibold text-slate-300 bg-slate-700/50 px-4 py-1 rounded-full mb-6">
+                <TeamEmblem emblem={team.emblem} color={team.color} className="w-5 h-5" />
+                <span className="text-white">{team.name}</span>
+            </div>
+
+            <div className="w-full max-w-sm grid grid-cols-2 gap-4 text-center">
+                <div className="bg-slate-800 p-3 rounded-lg">
+                    <p className="text-xl text-slate-400">총 득점</p>
+                    <p className="text-6xl font-bold text-sky-300">{stats.points}</p>
+                </div>
+                <div className="bg-slate-800 p-3 rounded-lg">
+                    <p className="text-xl text-slate-400">서브 득점</p>
+                    <p className="text-6xl font-bold text-sky-300">{stats.serviceAces}</p>
+                </div>
+                <div className="bg-slate-800 p-3 rounded-lg">
+                    <p className="text-xl text-slate-400">스파이크</p>
+                    <p className="text-6xl font-bold text-sky-300">{stats.spikeSuccesses}</p>
+                </div>
+                <div className="bg-slate-800 p-3 rounded-lg">
+                    <p className="text-xl text-slate-400">블로킹</p>
+                    <p className="text-6xl font-bold text-sky-300">{stats.blockingPoints}</p>
+                </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-yellow-400/20 w-full max-w-sm">
+                <p className="font-bold text-lg text-yellow-300">MVP 점수: {mvpScore.toFixed(1)}점</p>
+                <p className="text-sm text-slate-400">
+                    (스파이크: {scoreBreakdown.spikePoints.toFixed(1)},
+                    서브: {scoreBreakdown.servePoints.toFixed(1)},
+                    블로킹: {scoreBreakdown.blockPoints.toFixed(1)},
+                    범실: {scoreBreakdown.faultPoints.toFixed(1)})
+                </p>
+            </div>
+        </div>
+    );
+};
+
+const MatchLeadersCard: React.FC<{ leaders: MatchLeaders | null }> = ({ leaders }) => {
+    if (!leaders) return null;
+
+    const LeaderItem: React.FC<{ icon: React.ReactNode; title: string; leaders: { player: Player; value: number }[] }> = ({ icon, title, leaders }) => {
+        if (leaders.length === 0) return null;
+        return (
+            <div className="bg-slate-800 p-4 rounded-lg flex items-start gap-4">
+                <div className="flex-shrink-0 text-yellow-400 mt-1">{icon}</div>
+                <div className="flex-grow">
+                    <p className="text-sm text-slate-400">{title}</p>
+                    {leaders.map(({player, value}) => (
+                         <p key={player.id} className="text-lg font-bold text-white">{player.originalName} ({value})</p>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="bg-slate-800/50 p-4 rounded-lg">
+            <h3 className="text-xl font-bold text-slate-300 mb-4 text-center">최다 기록</h3>
+            <div className="space-y-3">
+                <LeaderItem icon={<MedalIcon className="w-8 h-8"/>} title="최다 득점" leaders={leaders.points} />
+                <LeaderItem icon={<MedalIcon className="w-8 h-8"/>} title="최다 서브 에이스" leaders={leaders.serviceAces} />
+                <LeaderItem icon={<MedalIcon className="w-8 h-8"/>} title="최다 블로킹" leaders={leaders.blockingPoints} />
+            </div>
+        </div>
+    );
+};
+
+
+const Timeline: React.FC<{ events: TimelineEvent[] }> = ({ events }) => {
+    if (events.length === 0) {
+        return null;
+    }
+
+    const getIcon = (type: TimelineEvent['type']) => {
+        switch (type) {
+            case 'STREAK': return <FireIcon className="w-5 h-5 text-orange-400" />;
+            case 'LEAD_CHANGE': return <SparklesIcon className="w-5 h-5 text-yellow-400" />;
+            case 'DEUCE': return <span className="font-bold text-purple-400">D</span>;
+            case 'MATCH_POINT': return <TrophyIcon className="w-5 h-5 text-green-400" />;
+            default: return null;
+        }
+    };
+
+    return (
+        <div className="bg-slate-800/50 p-4 rounded-lg">
+            <h3 className="text-xl font-bold text-slate-300 mb-4 text-center">주요 순간 타임라인</h3>
+            <div className="relative pl-6 border-l-2 border-slate-700 space-y-4">
+                {events.map((event, index) => (
+                    <div key={index} className="relative">
+                        <div className="absolute -left-[1.35rem] top-1 bg-slate-900 border-2 border-slate-700 rounded-full w-8 h-8 flex items-center justify-center">
+                            {getIcon(event.type)}
+                        </div>
+                        <div className="pl-4">
+                            <p className="font-semibold text-slate-200">{event.description}</p>
+                            <p className="text-xs text-slate-400">스코어: {event.score}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 
 const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
     const { teamSets, matchHistory, matchState, matchTime, saveMatchHistory, clearInProgressMatch, showToast, p2p } = useData();
@@ -60,6 +321,22 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
     const [pointsData, setPointsData] = useState<Record<string, { teamA: number; teamB: number }>>({});
     const [rankings, setRankings] = useState<{ rank: number | string; teamName: string; totalPoints: number }[]>([]);
     const [showRankingsModal, setShowRankingsModal] = useState(false);
+    const [showScoreTrend, setShowScoreTrend] = useState(false);
+    const [playerHistoryData, setPlayerHistoryData] = useState<{
+        player: Player;
+        cumulativeStats: any;
+        performanceHistory: any[];
+    } | null>(null);
+    const [mvp, setMvp] = useState<MvpResult>(null);
+    const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+    const [matchLeaders, setMatchLeaders] = useState<MatchLeaders | null>(null);
+
+
+    useEffect(() => {
+        if (selectedMatch) {
+            setShowScoreTrend(false); // Reset when new match is selected
+        }
+    }, [selectedMatch]);
     
     const allMatches = useMemo((): EnrichedMatch[] => {
         const all = [
@@ -100,6 +377,29 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
         return teamData;
     }, [teamSets]);
 
+    const enrichedSelectedMatch = useMemo(() => {
+        if (!selectedMatch) return null;
+    
+        const matchCopy = JSON.parse(JSON.stringify(selectedMatch)) as EnrichedMatch;
+        
+        const updateTeamBranding = (teamState: TeamMatchState) => {
+            const teamInfo = teamState.key ? allTeamData[teamState.key] : null;
+            if (teamInfo) {
+                teamState.emblem = teamInfo.emblem || teamState.emblem;
+                teamState.color = teamInfo.color || teamState.color;
+                teamState.slogan = teamInfo.slogan || teamState.slogan;
+            }
+            if (!teamState.color) teamState.color = teamState === matchCopy.teamA ? '#38bdf8' : '#f87171';
+            return teamState;
+        };
+    
+        matchCopy.teamA = updateTeamBranding(matchCopy.teamA);
+        matchCopy.teamB = updateTeamBranding(matchCopy.teamB);
+        
+        return matchCopy;
+    }, [selectedMatch, allTeamData]);
+
+
     const availableClasses = useMemo(() => {
         const classSet = new Set<string>();
         Object.values(allTeamData).forEach(team => {
@@ -109,18 +409,215 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
     }, [allTeamData]);
     
     const filteredMatches = useMemo(() => {
-        if (!selectedClass) return allMatches;
-        return allMatches.filter(match => {
-            const teamAClass = match.teamA.key ? allTeamData[match.teamA.key]?.className : null;
-            const teamBClass = match.teamB.key ? allTeamData[match.teamB.key]?.className : null;
-            // If class is selected, show matches relevant to that class.
-            // A non-host client might not have class data, so we show all matches for them if they can't filter.
+        const validMatches = allMatches.filter(match => {
+            if (!match || !match.teamA || !match.teamB) {
+                console.warn("Filtered out a malformed match record:", match);
+                return false;
+            }
+            return true;
+        });
+
+        if (!selectedClass) return validMatches;
+
+        return validMatches.filter(match => {
+            // FIX: Explicitly cast the result of the index access to resolve 'unknown' type error.
+            const teamAClass = match.teamA.key ? (allTeamData[match.teamA.key] as FlattenedTeam)?.className : null;
+            // FIX: Explicitly cast the result of the index access to resolve 'unknown' type error.
+            const teamBClass = match.teamB.key ? (allTeamData[match.teamB.key] as FlattenedTeam)?.className : null;
             if (p2p.isHost || (teamAClass && teamBClass)) {
                 return teamAClass === selectedClass || teamBClass === selectedClass;
             }
             return true;
         });
     }, [allMatches, selectedClass, allTeamData, p2p.isHost]);
+    
+    useEffect(() => {
+        const calculateMvp = (match: EnrichedMatch): MvpResult => {
+            let bestPlayer: { player: Player, team: TeamMatchState, stats: PlayerStats, mvpScore: number, scoreBreakdown: Record<string, number> } | null = null;
+            const processTeam = (teamState: TeamMatchState) => {
+                if (!teamState.players || !teamState.playerStats) return;
+                for (const playerId of Object.keys(teamState.players)) {
+                    const player = teamState.players[playerId];
+                    const stats = teamState.playerStats[playerId];
+                    if (player && stats) {
+                        const scoreBreakdown = {
+                            spikePoints: (stats.spikeSuccesses || 0) * 1.5,
+                            servePoints: (stats.serviceAces || 0) * 2.0,
+                            blockPoints: (stats.blockingPoints || 0) * 1.8,
+                            faultPoints: -(stats.serviceFaults || 0) * 1.0,
+                        };
+                        const mvpScore = Object.values(scoreBreakdown).reduce((a, b) => a + b, 0);
+
+                        if (!bestPlayer || mvpScore > bestPlayer.mvpScore) {
+                            bestPlayer = { player, team: teamState, stats, mvpScore, scoreBreakdown };
+                        }
+                    }
+                }
+            };
+            processTeam(match.teamA);
+            processTeam(match.teamB);
+            return bestPlayer;
+        };
+
+        const generateTimeline = (match: EnrichedMatch): TimelineEvent[] => {
+            const getTopScorerInStreak = (teamState: TeamMatchState): Player | null => {
+                if (!teamState.players || !teamState.playerStats) return null;
+                return Object.values(teamState.players).reduce((top, current) => {
+                    const topPoints = top ? teamState.playerStats[top.id]?.points ?? -1 : -1;
+                    const currentPoints = current ? teamState.playerStats[current.id]?.points ?? -1 : -1;
+                    return currentPoints > topPoints ? current : top;
+                }, null as Player | null);
+            };
+
+            const events: TimelineEvent[] = [];
+            if (!match.scoreHistory || match.scoreHistory.length < 2) return [];
+
+            let streak = { team: '', count: 0 };
+            let lastLead: 'A' | 'B' | 'TIE' | null = null;
+            
+            for (let i = 1; i < match.scoreHistory.length; i++) {
+                const prev = match.scoreHistory[i-1];
+                const curr = match.scoreHistory[i];
+                const scoreStr = `${curr.a}-${curr.b}`;
+                let scoringTeam: 'A' | 'B' | null = null;
+
+                if (curr.a > prev.a) scoringTeam = 'A';
+                else if (curr.b > prev.b) scoringTeam = 'B';
+                
+                if (scoringTeam) {
+                    if (streak.team === scoringTeam) {
+                        streak.count++;
+                    } else {
+                        if (streak.count >= 3) {
+                            const teamState = streak.team === 'A' ? match.teamA : match.teamB;
+                            const topScorer = getTopScorerInStreak(teamState);
+                            const topScorerInfo = topScorer ? ` (주요 선수: ${topScorer.originalName} ${teamState.playerStats[topScorer.id]?.points || 0}점)` : '';
+                            events.push({ type: 'STREAK', team: streak.team as 'A' | 'B', description: `${teamState.name}, ${streak.count}점 연속 득점!${topScorerInfo}`, score: `${prev.a}-${prev.b}` });
+                        }
+                        streak = { team: scoringTeam, count: 1 };
+                    }
+                }
+                
+                const currentLead = curr.a > curr.b ? 'A' : (curr.b > curr.a ? 'B' : 'TIE');
+                if (lastLead && currentLead !== 'TIE' && lastLead !== 'TIE' && currentLead !== lastLead) {
+                    const leadTeamState = currentLead === 'A' ? match.teamA : match.teamB;
+                    const topScorer = getTopScorerInStreak(leadTeamState);
+                    const topScorerInfo = topScorer ? ` (주요 선수: ${topScorer.originalName} ${leadTeamState.playerStats[topScorer.id]?.points || 0}점)` : '';
+                    events.push({ type: 'LEAD_CHANGE', team: currentLead, description: `${leadTeamState.name}, 역전에 성공!${topScorerInfo}`, score: scoreStr });
+                }
+                if (currentLead !== 'TIE') lastLead = currentLead;
+
+                if (curr.a >= 10 && curr.a === curr.b) {
+                    const isNewDeuce = !events.some(e => e.type === 'DEUCE' && e.score === scoreStr);
+                    if (isNewDeuce) {
+                        events.push({ type: 'DEUCE', team: null, description: `듀스 접전!`, score: scoreStr });
+                    }
+                }
+            }
+
+            if (streak.count >= 3) {
+                const teamState = streak.team === 'A' ? match.teamA : match.teamB;
+                const topScorer = getTopScorerInStreak(teamState);
+                const topScorerInfo = topScorer ? ` (주요 선수: ${topScorer.originalName} ${teamState.playerStats[topScorer.id]?.points || 0}점)` : '';
+                events.push({ type: 'STREAK', team: streak.team as 'A' | 'B', description: `${teamState.name}, ${streak.count}점 연속 득점!${topScorerInfo}`, score: `${match.scoreHistory[match.scoreHistory.length - 1].a}-${match.scoreHistory[match.scoreHistory.length - 1].b}` });
+            }
+
+            events.push({ type: 'MATCH_POINT', team: match.winner, description: `경기 종료!`, score: `${match.teamA.score}-${match.teamB.score}` });
+
+            return events;
+        };
+
+        const calculateMatchLeaders = (match: EnrichedMatch): MatchLeaders => {
+            const leaders: MatchLeaders = { points: [], serviceAces: [], blockingPoints: [] };
+            let maxStats = { points: 0, serviceAces: 0, blockingPoints: 0 };
+            const allPlayersInMatch: {player: Player, stats: PlayerStats}[] = [];
+        
+            const addPlayersFromTeam = (team: TeamMatchState) => {
+                if (!team.players || !team.playerStats) return;
+                Object.keys(team.players).forEach(pId => {
+                    if (team.players[pId] && team.playerStats[pId]) {
+                        allPlayersInMatch.push({player: team.players[pId], stats: team.playerStats[pId]});
+                    }
+                });
+            };
+        
+            addPlayersFromTeam(match.teamA);
+            addPlayersFromTeam(match.teamB);
+        
+            allPlayersInMatch.forEach(({ stats }) => {
+                if (stats.points > maxStats.points) maxStats.points = stats.points;
+                if (stats.serviceAces > maxStats.serviceAces) maxStats.serviceAces = stats.serviceAces;
+                if (stats.blockingPoints > maxStats.blockingPoints) maxStats.blockingPoints = stats.blockingPoints;
+            });
+        
+            allPlayersInMatch.forEach(({ player, stats }) => {
+                if (stats.points > 0 && stats.points === maxStats.points) leaders.points.push({ player, value: stats.points });
+                if (stats.serviceAces > 0 && stats.serviceAces === maxStats.serviceAces) leaders.serviceAces.push({ player, value: stats.serviceAces });
+                if (stats.blockingPoints > 0 && stats.blockingPoints === maxStats.blockingPoints) leaders.blockingPoints.push({ player, value: stats.blockingPoints });
+            });
+        
+            return leaders;
+        };
+
+        if (enrichedSelectedMatch && enrichedSelectedMatch.status === 'completed') {
+            setMvp(calculateMvp(enrichedSelectedMatch));
+            setTimelineEvents(generateTimeline(enrichedSelectedMatch));
+            setMatchLeaders(calculateMatchLeaders(enrichedSelectedMatch));
+        } else {
+            setMvp(null);
+            setTimelineEvents([]);
+            setMatchLeaders(null);
+        }
+    }, [enrichedSelectedMatch]);
+
+
+    const calculatePlayerHistory = useCallback((player: Player) => {
+        if (!player) return;
+    
+        const cumulativeStats: any = {
+            points: 0, serviceAces: 0, serviceFaults: 0, blockingPoints: 0, spikeSuccesses: 0, matchesPlayed: 0
+        };
+        const performanceHistory: any[] = [];
+    
+        const completedMatches = matchHistory
+            .filter(m => m.status === 'completed')
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+        completedMatches.forEach(match => {
+            let playerTeam: 'teamA' | 'teamB' | null = null;
+            if (match.teamA.players && Object.keys(match.teamA.players).includes(player.id)) {
+                playerTeam = 'teamA';
+            } else if (match.teamB.players && Object.keys(match.teamB.players).includes(player.id)) {
+                playerTeam = 'teamB';
+            }
+    
+            if (playerTeam) {
+                const teamState = match[playerTeam];
+                const opponentName = (playerTeam === 'teamA' ? match.teamB : match.teamA).name;
+                const playerStatsForMatch = teamState.playerStats?.[player.id];
+    
+                if (playerStatsForMatch) {
+                    cumulativeStats.matchesPlayed += 1;
+                    Object.keys(playerStatsForMatch).forEach(key => {
+                        cumulativeStats[key as keyof PlayerStats] = (cumulativeStats[key as keyof PlayerStats] || 0) + playerStatsForMatch[key as keyof PlayerStats];
+                    });
+    
+                    performanceHistory.push({
+                        matchDate: match.date,
+                        opponent: opponentName,
+                        stats: playerStatsForMatch,
+                    });
+                }
+            }
+        });
+    
+        const totalServices = (cumulativeStats.serviceAces || 0) + (cumulativeStats.serviceFaults || 0);
+        cumulativeStats.serviceSuccessRate = totalServices > 0 ? (cumulativeStats.serviceAces / totalServices) * 100 : 0;
+        
+        performanceHistory.reverse();
+    
+        setPlayerHistoryData({ player, cumulativeStats, performanceHistory });
+    }, [matchHistory]);
 
     const handleCalculatePoints = useCallback(() => {
         const newPointsData: Record<string, { teamA: number; teamB: number }> = {};
@@ -134,7 +631,7 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
             }
         });
         setPointsData(newPointsData);
-        setRankings([]); // Clear rankings as they are now outdated
+        setRankings([]);
         showToast('경기별 승점을 계산했습니다.', 'success');
     }, [filteredMatches, showToast]);
 
@@ -175,20 +672,24 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
         setShowRankingsModal(true);
     }, [filteredMatches, showToast]);
 
-    const handleDelete = (matchId: string) => {
+    const handleDelete = async (matchId: string) => {
         if (!confirm('정말로 이 경기 기록을 삭제하시겠습니까?')) return;
 
-        if (matchId === 'in-progress') {
-            clearInProgressMatch();
-        } else {
-            const updatedHistory = matchHistory.filter((m, i) => `history-${i}` !== matchId);
-            saveMatchHistory(updatedHistory);
+        try {
+            if (matchId === 'in-progress') {
+                clearInProgressMatch();
+                showToast('진행 중인 경기가 삭제되었습니다.', 'success');
+            } else {
+                const updatedHistory = matchHistory.filter((_, i) => `history-${i}` !== matchId);
+                await saveMatchHistory(updatedHistory, '기록이 삭제되었습니다.');
+            }
+            
+            if(selectedMatch?.id === matchId) setSelectedMatch(null);
+            setPointsData({});
+            setRankings([]);
+        } catch (error) {
+            console.error("Failed to delete match record:", error);
         }
-        
-        if(selectedMatch?.id === matchId) setSelectedMatch(null);
-        setPointsData({});
-        setRankings([]);
-        showToast('기록이 삭제되었습니다.', 'success');
     };
     
     const handleExportCSV = () => {
@@ -219,24 +720,37 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
         link.click();
         document.body.removeChild(link);
     };
-
-    const teamARoster = selectedMatch?.teamA.key ? allTeamData[selectedMatch.teamA.key] : null;
-    const teamBRoster = selectedMatch?.teamB.key ? allTeamData[selectedMatch.teamB.key] : null;
     
     const chartData = useMemo(() => {
-        if (!selectedMatch) return [];
-        const { teamA, teamB } = selectedMatch;
+        if (!enrichedSelectedMatch) return [];
+        const { teamA, teamB } = enrichedSelectedMatch;
         return [
             { name: '서브 득점', [teamA.name]: teamA.serviceAces, [teamB.name]: teamB.serviceAces },
             { name: '서브 범실', [teamA.name]: teamA.serviceFaults, [teamB.name]: teamB.serviceFaults },
             { name: '블로킹', [teamA.name]: teamA.blockingPoints, [teamB.name]: teamB.blockingPoints },
             { name: '스파이크', [teamA.name]: teamA.spikeSuccesses, [teamB.name]: teamB.spikeSuccesses },
+            { name: '3단 플레이', [teamA.name]: teamA.threeHitPlays, [teamB.name]: teamB.threeHitPlays },
+            { name: '페어플레이', [teamA.name]: teamA.fairPlay, [teamB.name]: teamB.fairPlay },
         ];
-    }, [selectedMatch]);
+    }, [enrichedSelectedMatch]);
+
+    const findTeamSetForMatchTeam = (teamKey: string | undefined): TeamSet | undefined => {
+        if (!teamKey) return undefined;
+        const [setId] = teamKey.split('___');
+        return teamSets.find(s => s.id === setId);
+    };
     
     return (
         <>
             <RankingsModal isOpen={showRankingsModal} onClose={() => setShowRankingsModal(false)} rankings={rankings} />
+            {playerHistoryData && (
+                <PlayerHistoryModal
+                    player={playerHistoryData.player}
+                    cumulativeStats={playerHistoryData.cumulativeStats}
+                    performanceHistory={playerHistoryData.performanceHistory}
+                    onClose={() => setPlayerHistoryData(null)}
+                />
+            )}
             <div className="max-w-7xl mx-auto bg-slate-900/50 backdrop-blur-sm border border-slate-700 p-6 rounded-lg shadow-2xl space-y-6 animate-fade-in w-full">
                 <div className="flex justify-between items-center flex-wrap gap-4">
                     <h2 className="text-3xl font-bold text-[#00A3FF]">경기 기록 목록</h2>
@@ -271,6 +785,14 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
                         ) : (
                             filteredMatches.map((match) => {
                                 const pointInfo = pointsData[match.id];
+                                const teamAInfo = match.teamA.key ? allTeamData[match.teamA.key] : null;
+                                const teamBInfo = match.teamB.key ? allTeamData[match.teamB.key] : null;
+
+                                const teamAColor = teamAInfo?.color || match.teamA.color || '#38bdf8';
+                                const teamBColor = teamBInfo?.color ||'#f87171';
+                                const teamAEmblem = teamAInfo?.emblem || match.teamA.emblem;
+                                const teamBEmblem = teamBInfo?.emblem || match.teamB.emblem;
+
                                 return (
                                 <div
                                     key={match.id}
@@ -278,13 +800,19 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
                                 >
                                     <div className="flex-grow cursor-pointer" onClick={() => setSelectedMatch(match)}>
                                         <div className="flex justify-between items-center text-lg">
-                                            <span className={`font-semibold ${match.winner === 'A' ? 'text-sky-400' : ''}`}>
-                                                {match.teamA.name} {pointInfo && <span className="text-yellow-400 text-sm">(승점: {pointInfo.teamA}점)</span>}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <TeamEmblem emblem={teamAEmblem} color={teamAColor} className="w-6 h-6"/>
+                                                <span className={`font-semibold ${match.winner === 'A' ? 'font-bold' : ''}`} style={{color: teamAColor}}>
+                                                    {match.teamA.name} {pointInfo && <span className="text-yellow-400 text-sm">(승점: {pointInfo.teamA}점)</span>}
+                                                </span>
+                                            </div>
                                             <span className="font-mono font-bold text-xl">{match.teamA.score} : {match.teamB.score}</span>
-                                            <span className={`font-semibold text-right ${match.winner === 'B' ? 'text-red-400' : ''}`}>
-                                                {match.teamB.name} {pointInfo && <span className="text-yellow-400 text-sm">(승점: {pointInfo.teamB}점)</span>}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`font-semibold text-right ${match.winner === 'B' ? 'font-bold' : ''}`} style={{color: teamBColor}}>
+                                                    {match.teamB.name} {pointInfo && <span className="text-yellow-400 text-sm">(승점: {pointInfo.teamB}점)</span>}
+                                                </span>
+                                                <TeamEmblem emblem={teamBEmblem} color={teamBColor} className="w-6 h-6"/>
+                                            </div>
                                         </div>
                                         <p className="text-xs text-slate-500 mt-1">
                                             <span className={`font-semibold ${match.status === 'in_progress' ? 'text-green-400 animate-pulse' : 'text-slate-500'}`}>
@@ -315,38 +843,80 @@ const RecordScreen: React.FC<RecordScreenProps> = ({ onContinueGame }) => {
                         </button>
                     </div>
                     
-                    {selectedMatch && (
+                    {enrichedSelectedMatch && (
                         <div className="space-y-6 pt-6 border-t border-slate-700 animate-fade-in">
-                            <h2 className="text-3xl font-bold text-[#00A3FF]">상세 기록 및 분석</h2>
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-3xl font-bold text-[#00A3FF]">상세 기록 및 분석</h2>
+                            </div>
+                            
+                             {enrichedSelectedMatch.status === 'completed' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                                    <MvpCard mvp={mvp} />
+                                    <div className="flex flex-col gap-6">
+                                        <MatchLeadersCard leaders={matchLeaders} />
+                                        <Timeline events={timelineEvents} />
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div className="bg-slate-800/50 p-4 rounded-lg">
                                     <h3 className="font-bold text-xl mb-3 text-center">주요 스탯 비교</h3>
                                     <table className="w-full text-center">
-                                        <thead><tr className="border-b-2 border-slate-600 text-slate-300"><th className="p-2 text-left">항목</th><th className="p-2 text-sky-400">{selectedMatch.teamA.name}</th><th className="p-2 text-red-400">{selectedMatch.teamB.name}</th></tr></thead>
+                                        <thead><tr className="border-b-2 border-slate-600 text-slate-300"><th className="p-2 text-left">항목</th><th className="p-2" style={{color: enrichedSelectedMatch.teamA.color}}>{enrichedSelectedMatch.teamA.name}</th><th className="p-2" style={{color: enrichedSelectedMatch.teamB.color}}>{enrichedSelectedMatch.teamB.name}</th></tr></thead>
                                         <tbody className="font-mono text-slate-200">
-                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">최종 점수</td><td className="p-2 text-2xl font-bold">{selectedMatch.teamA.score}</td><td className="p-2 text-2xl font-bold">{selectedMatch.teamB.score}</td></tr>
-                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">서브 득점</td><td>{selectedMatch.teamA.serviceAces}</td><td>{selectedMatch.teamB.serviceAces}</td></tr>
-                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">서브 범실</td><td>{selectedMatch.teamA.serviceFaults}</td><td>{selectedMatch.teamB.serviceFaults}</td></tr>
-                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">블로킹 득점</td><td>{selectedMatch.teamA.blockingPoints}</td><td>{selectedMatch.teamB.blockingPoints}</td></tr>
-                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">스파이크 성공</td><td>{selectedMatch.teamA.spikeSuccesses}</td><td>{selectedMatch.teamB.spikeSuccesses}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">최종 점수</td><td className="p-2 text-2xl font-bold">{enrichedSelectedMatch.teamA.score}</td><td className="p-2 text-2xl font-bold">{enrichedSelectedMatch.teamB.score}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">서브 득점</td><td>{enrichedSelectedMatch.teamA.serviceAces}</td><td>{enrichedSelectedMatch.teamB.serviceAces}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">서브 범실</td><td>{enrichedSelectedMatch.teamA.serviceFaults}</td><td>{enrichedSelectedMatch.teamB.serviceFaults}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">블로킹 득점</td><td>{enrichedSelectedMatch.teamA.blockingPoints}</td><td>{enrichedSelectedMatch.teamB.blockingPoints}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">스파이크 성공</td><td>{enrichedSelectedMatch.teamA.spikeSuccesses}</td><td>{enrichedSelectedMatch.teamB.spikeSuccesses}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">3단 플레이</td><td>{enrichedSelectedMatch.teamA.threeHitPlays}</td><td>{enrichedSelectedMatch.teamB.threeHitPlays}</td></tr>
+                                            <tr className="border-b border-slate-700"><td className="p-2 text-left font-sans text-slate-400">페어플레이</td><td>{enrichedSelectedMatch.teamA.fairPlay}</td><td>{enrichedSelectedMatch.teamB.fairPlay}</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
                                 <div className="bg-slate-800/50 p-4 rounded-lg min-h-[300px]">
-                                    <h3 className="font-bold text-xl mb-3 text-center">팀별 스탯 그래프</h3>
-                                    <ResponsiveContainer width="100%" height={250}>
-                                        <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="name" tick={{ fill: '#94a3b8' }} /><YAxis tick={{ fill: '#94a3b8' }} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} /><Legend /><Bar dataKey={selectedMatch.teamA.name} fill="#38bdf8" /><Bar dataKey={selectedMatch.teamB.name} fill="#f87171" />
-                                        </BarChart>
-                                    </ResponsiveContainer>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h3 className="font-bold text-xl text-center">팀별 스탯 그래프</h3>
+                                        <button
+                                            onClick={() => setShowScoreTrend(prev => !prev)}
+                                            className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-1 px-3 rounded-lg text-sm transition duration-200"
+                                        >
+                                            {showScoreTrend ? '추이 닫기' : '득점 추이'}
+                                        </button>
+                                     </div>
+                                    {showScoreTrend ? (
+                                        <div className="animate-fade-in h-[250px]">
+                                            <ScoreTrendChart match={enrichedSelectedMatch} />
+                                        </div>
+                                    ) : (
+                                        <ResponsiveContainer width="100%" height={250}>
+                                            <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                                <XAxis dataKey="name" tick={{ fill: '#94a3b8' }} interval={0} />
+                                                <YAxis tick={{ fill: '#94a3b8' }} allowDecimals={false} />
+                                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
+                                                <Legend />
+                                                <Bar dataKey={enrichedSelectedMatch.teamA.name} fill={enrichedSelectedMatch.teamA.color} />
+                                                <Bar dataKey={enrichedSelectedMatch.teamB.name} fill={enrichedSelectedMatch.teamB.color} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    )}
                                 </div>
-                                <div className="bg-slate-800/50 p-4 rounded-lg">
-                                    <h3 className="font-bold text-xl mb-3 text-sky-400">{selectedMatch.teamA.name} 선수 명단</h3>
-                                    {teamARoster ? (<ul className="space-y-2"><li className="flex items-center gap-2 font-bold text-yellow-400"><CrownIcon className="w-5 h-5"/>{teamARoster.captain}</li>{teamARoster.players.filter(p => p !== teamARoster.captain).map(p => <li key={p} className="ml-2">{p}</li>)}</ul>) : <p className="text-slate-500">선수 명단 정보가 없습니다.</p>}
-                                </div>
-                                <div className="bg-slate-800/50 p-4 rounded-lg">
-                                    <h3 className="font-bold text-xl mb-3 text-red-400">{selectedMatch.teamB.name} 선수 명단</h3>
-                                    {teamBRoster ? (<ul className="space-y-2"><li className="flex items-center gap-2 font-bold text-yellow-400"><CrownIcon className="w-5 h-5"/>{teamBRoster.captain}</li>{teamBRoster.players.filter(p => p !== teamBRoster.captain).map(p => <li key={p} className="ml-2">{p}</li>)}</ul>) : <p className="text-slate-500">선수 명단 정보가 없습니다.</p>}
+                            </div>
+                            <div className="pt-6 border-t border-slate-700">
+                                <h3 className="text-2xl font-bold text-slate-300 mb-4">선수별 상세 기록</h3>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <PlayerStatsTable 
+                                        teamMatchState={enrichedSelectedMatch.teamA} 
+                                        onPlayerClick={calculatePlayerHistory} 
+                                        teamSet={findTeamSetForMatchTeam(enrichedSelectedMatch.teamA.key)}
+                                    />
+                                    <PlayerStatsTable 
+                                        teamMatchState={enrichedSelectedMatch.teamB} 
+                                        onPlayerClick={calculatePlayerHistory}
+                                        teamSet={findTeamSetForMatchTeam(enrichedSelectedMatch.teamB.key)}
+                                    />
                                 </div>
                             </div>
                         </div>

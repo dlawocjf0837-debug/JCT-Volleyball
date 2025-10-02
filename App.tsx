@@ -11,13 +11,17 @@ import RecordScreen from './screens/RecordScreen';
 import RefereeScreen from './screens/RefereeScreen';
 import AnnouncerScreen from './screens/AnnouncerScreen';
 import CameraDirectorScreen from './screens/CameraDirectorScreen';
-import AnalysisScreen from './screens/AnalysisScreen';
+import TeamManagementScreen from './screens/TeamManagementScreen';
+import TeamAnalysisScreen from './screens/TeamAnalysisScreen';
+import AttendanceScreen from './screens/AttendanceScreen';
 import { Player, Screen, Stats, STAT_KEYS, MatchState } from './types';
+import ConfirmationModal from './components/common/ConfirmationModal';
 
 const AppContent: React.FC = () => {
-    const [view, setView] = useState<'menu' | 'teamBuilder' | 'matchSetup' | 'scoreboard' | 'history' | 'referee' | 'announcer' | 'cameraDirector' | 'analysis'>('menu');
+    const [view, setView] = useState<'menu' | 'teamBuilder' | 'matchSetup' | 'attendance' | 'scoreboard' | 'history' | 'referee' | 'announcer' | 'cameraDirector' | 'teamManagement' | 'teamAnalysis'>('menu');
     const [scoreboardMode, setScoreboardMode] = useState<'record' | 'referee'>('record');
-    const { toast, hideToast, isLoading, exportData, importData, startHostSession, matchState, p2p } = useData();
+    const { toast, hideToast, isLoading, exportData, saveImportedData, startHostSession, p2p, resetAllData, recoveryData, handleRestoreFromBackup, dismissRecovery } = useData();
+    const [teamsForAttendance, setTeamsForAttendance] = useState<{ teamA: string, teamB: string, teamAKey?: string, teamBKey?: string } | null>(null);
 
     // --- State and Logic for Team Builder ---
     const [builderScreen, setBuilderScreen] = useState<Screen>(Screen.Input);
@@ -26,20 +30,9 @@ const AppContent: React.FC = () => {
     
     // This effect handles navigation for peers, ensuring they don't access host-only screens.
     useEffect(() => {
-        // This logic only applies to clients who have successfully connected as a peer.
-        if (p2p.isHost || !p2p.isConnected) {
-            return;
-        }
-
-        // A peer (non-host) should only be on one of these allowed screens.
+        if (p2p.isHost || !p2p.isConnected) return;
         const allowedPeerViews: Set<string> = new Set(['menu', 'announcer', 'cameraDirector', 'history']);
-
-        // If a peer finds themselves on a screen that is NOT in the allowed list
-        // (e.g., a host-exclusive screen), we immediately navigate them back to the main menu.
-        // This is more robust than checking against a list of "host-only" screens.
-        if (!allowedPeerViews.has(view)) {
-            setView('menu');
-        }
+        if (!allowedPeerViews.has(view)) setView('menu');
     }, [p2p.isHost, p2p.isConnected, view]);
 
     const handleStartBuilding = useCallback((newPlayers: Omit<Player, 'id' | 'anonymousName' | 'isCaptain' | 'totalScore'>[], selectedClass: string) => {
@@ -62,17 +55,28 @@ const AppContent: React.FC = () => {
                 const { min, max } = statsRange[key];
                 const value = p.stats[key];
                 let normalizedValue = 0;
-                if (max - min > 0) {
-                    if (key === 'fiftyMeterDash') {
-                        normalizedValue = ((max - value) / (max - min)) * 100;
+
+                if (key === 'fiftyMeterDash') {
+                    // Lower is better. Best score (min) gets 100.
+                    // The score is relative to the best performance (min value).
+                    if (value > 0) {
+                        normalizedValue = (min / value) * 100;
                     } else {
-                        normalizedValue = ((value - min) / (max - min)) * 100;
+                        normalizedValue = 0;
                     }
                 } else {
-                    normalizedValue = 50;
+                    // Higher is better. Best score (max) gets 100.
+                    // The score is relative to the best performance (max value).
+                    if (max > 0) {
+                        normalizedValue = (value / max) * 100;
+                    } else {
+                        normalizedValue = 0; // If max is 0, all values must be 0.
+                    }
                 }
-                normalizedStats[key] = normalizedValue;
-                totalNormalizedScore += normalizedValue;
+                
+                // Ensure scores are within the 0-100 range.
+                normalizedStats[key] = Math.max(0, Math.min(normalizedValue, 100));
+                totalNormalizedScore += normalizedStats[key]!;
             });
             const totalScore = totalNormalizedScore / STAT_KEYS.length;
             return { ...p, stats: normalizedStats as Stats, totalScore };
@@ -98,8 +102,14 @@ const AppContent: React.FC = () => {
         setView('menu');
     }, []);
 
-    const handleStartRecordMatch = (teams: { teamA: string, teamB: string, teamAKey?: string, teamBKey?: string }) => {
-        startHostSession(teams);
+    const handleGoToAttendance = (teams: { teamA: string, teamB: string, teamAKey?: string, teamBKey?: string }) => {
+        setTeamsForAttendance(teams);
+        setView('attendance');
+    };
+
+    const handleStartMatchFromAttendance = (attendingPlayers: { teamA: Record<string, Player>, teamB: Record<string, Player>}) => {
+        if (!teamsForAttendance) return;
+        startHostSession(teamsForAttendance, undefined, attendingPlayers);
         setScoreboardMode('record');
         setView('scoreboard');
     };
@@ -112,11 +122,14 @@ const AppContent: React.FC = () => {
     
     const handleContinueGame = (gameState: MatchState) => {
         startHostSession(undefined, gameState);
-        setScoreboardMode('record'); // Continuing a game always goes to record mode
+        setScoreboardMode('record');
         setView('scoreboard');
     };
     
-    const navigateToMenu = () => setView('menu');
+    const navigateToMenu = () => {
+        setTeamsForAttendance(null);
+        setView('menu');
+    }
 
     const renderView = () => {
         if (isLoading) {
@@ -138,7 +151,13 @@ const AppContent: React.FC = () => {
                     return <TeamBuilderScreen initialPlayers={players} onReset={handleResetBuilder} selectedClass={currentClass} />;
                 }
             case 'matchSetup':
-                return <MatchSetupScreen onStartMatch={handleStartRecordMatch} />;
+                return <MatchSetupScreen onStartMatch={handleGoToAttendance} />;
+            case 'attendance':
+                if (!teamsForAttendance) {
+                    setView('matchSetup');
+                    return null;
+                }
+                return <AttendanceScreen teamSelection={teamsForAttendance} onStartMatch={handleStartMatchFromAttendance} />;
             case 'scoreboard':
                 return <ScoreboardScreen onBackToMenu={navigateToMenu} mode={scoreboardMode} />;
             case 'history':
@@ -149,8 +168,10 @@ const AppContent: React.FC = () => {
                  return <AnnouncerScreen onNavigateToHistory={() => setView('history')} />;
             case 'cameraDirector':
                  return <CameraDirectorScreen />;
-            case 'analysis':
-                return <AnalysisScreen />;
+            case 'teamManagement':
+                return <TeamManagementScreen />;
+            case 'teamAnalysis':
+                return <TeamAnalysisScreen />;
             case 'menu':
             default:
                 return (
@@ -162,12 +183,13 @@ const AppContent: React.FC = () => {
                         }}
                         onStartMatch={() => setView('matchSetup')}
                         onShowHistory={() => setView('history')}
-                        onStartAnalysis={() => setView('analysis')}
-                        onStartReferee={() => setView('referee')}
+                        onStartTeamAnalysis={() => setView('teamAnalysis')}
+                        onStartTeamManagement={() => setView('teamManagement')}
                         onStartAnnouncer={() => setView('announcer')}
                         onStartCameraDirector={() => setView('cameraDirector')}
                         onExportData={exportData}
-                        onImportData={importData}
+                        onSaveImportedData={saveImportedData}
+                        onResetAllData={resetAllData}
                     />
                 );
         }
@@ -177,12 +199,14 @@ const AppContent: React.FC = () => {
         switch (view) {
             case 'teamBuilder': return 'VOLLEYBALL TEAM BUILDER';
             case 'matchSetup': return '경기 설정';
+            case 'attendance': return '출전 선수 선택';
             case 'scoreboard': return 'VOLLEYBALL SCOREBOARD';
             case 'history': return '경기 기록';
             case 'referee': return '주심용 점수판';
             case 'announcer': return '아나운서 프로그램';
             case 'cameraDirector': return '카메라 감독 프로그램';
-            case 'analysis': return '종합 데이터 분석';
+            case 'teamManagement': return '팀 관리';
+            case 'teamAnalysis': return '팀 성과 분석';
             default: return 'MAIN MENU';
         }
     }
@@ -197,6 +221,14 @@ const AppContent: React.FC = () => {
                 <p>&copy; 2025. <span className="font-semibold text-[#00A3FF]">JCT</span>. All Rights Reserved.</p>
             </footer>
             {toast.message && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+            <ConfirmationModal
+                isOpen={!!recoveryData}
+                onClose={dismissRecovery}
+                onConfirm={handleRestoreFromBackup}
+                title="데이터 복구"
+                message="자동으로 저장된 최신 백업 데이터를 찾았습니다. 이 데이터를 복구하시겠습니까?"
+                confirmText="복구하기"
+            />
         </div>
     );
 };

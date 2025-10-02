@@ -2,16 +2,15 @@ import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useData } from '../contexts/DataContext';
 import { Player, MatchState, SavedTeamInfo } from '../types';
 import StatModal from '../components/StatModal';
-import { CrownIcon, QuestionMarkCircleIcon } from '../components/icons';
+import { CrownIcon, QuestionMarkCircleIcon, VolleyballIcon } from '../components/icons';
 import CommentaryGuideModal from '../components/CommentaryGuideModal';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import TeamEmblem from '../components/TeamEmblem';
 
 interface AnnouncerScreenProps {
     onNavigateToHistory: () => void;
 }
 
-// --- Sound Panel Component ---
-// Moved outside the main component to prevent re-creation on every render.
 const SoundPanel: React.FC<{ matchState: MatchState | null }> = ({ matchState }) => {
     const audioRefs = {
         bgm1: useRef<HTMLAudioElement>(null),
@@ -21,11 +20,12 @@ const SoundPanel: React.FC<{ matchState: MatchState | null }> = ({ matchState })
         end: useRef<HTMLAudioElement>(null),
         teamACheer: useRef<HTMLAudioElement>(null),
         teamBCheer: useRef<HTMLAudioElement>(null),
+        teamACheer2: useRef<HTMLAudioElement>(null),
+        teamBCheer2: useRef<HTMLAudioElement>(null),
     };
     const [playingSound, setPlayingSound] = useState<keyof typeof audioRefs | null>(null);
 
     const handleSoundToggle = useCallback((soundKey: keyof typeof audioRefs) => {
-        // Stop all other sounds first
         Object.entries(audioRefs).forEach(([key, ref]) => {
             if (key !== soundKey && ref.current && !ref.current.paused) {
                 ref.current.pause();
@@ -37,32 +37,30 @@ const SoundPanel: React.FC<{ matchState: MatchState | null }> = ({ matchState })
         if (!audioToToggle) return;
         
         if (playingSound === soundKey) {
-            // The clicked sound is already playing, so stop it.
             audioToToggle.pause();
             audioToToggle.currentTime = 0;
             setPlayingSound(null);
         } else {
-            // A different sound or no sound was playing, so start this one.
-            const isLooping = ['bgm1', 'bgm2', 'teamACheer', 'teamBCheer'].includes(soundKey);
+            const isLooping = ['bgm1', 'bgm2', 'teamACheer', 'teamBCheer', 'teamACheer2', 'teamBCheer2'].includes(soundKey);
             audioToToggle.loop = isLooping;
             audioToToggle.play().catch(e => console.error(`Audio play failed for ${soundKey}:`, e));
             setPlayingSound(soundKey);
         }
     }, [playingSound, audioRefs]);
 
-    const teamACheerUrl = matchState?.teamA.cheerUrl;
-    const teamBCheerUrl = matchState?.teamB.cheerUrl;
+    const { teamA, teamB } = matchState || {};
 
     return (
         <div className="flex flex-wrap items-center justify-center gap-2">
-            {/* NOTE: 구글 드라이브 링크는 직접 재생이 안되므로, 작동하는 샘플 오디오 URL로 교체했습니다. 위 설명에 따라 GitHub 등에 업로드하여 얻은 직접 링크로 교체하여 사용하세요. */}
             <audio ref={audioRefs.bgm1} src="https://github.com/dlawocjf0837-debug/Volleyball-sounds/raw/refs/heads/main/start.wav" preload="auto"></audio>
             <audio ref={audioRefs.bgm2} src="https://github.com/dlawocjf0837-debug/Volleyball-sounds/raw/refs/heads/main/start2.mp3" preload="auto"></audio>
             <audio ref={audioRefs.timeout} src="https://github.com/dlawocjf0837-debug/Volleyball-sounds/raw/refs/heads/main/Timsong.mp3" preload="auto"></audio>
             <audio ref={audioRefs.cheer} src="https://github.com/dlawocjf0837-debug/Volleyball-sounds/raw/refs/heads/main/crowd-cheering-379666.mp3" preload="auto"></audio>
             <audio ref={audioRefs.end} src="https://github.com/dlawocjf0837-debug/Volleyball-sounds/raw/refs/heads/main/end.wav" preload="auto"></audio>
-            {teamACheerUrl && <audio ref={audioRefs.teamACheer} src={teamACheerUrl} preload="auto"></audio>}
-            {teamBCheerUrl && <audio ref={audioRefs.teamBCheer} src={teamBCheerUrl} preload="auto"></audio>}
+            {teamA?.cheerUrl && <audio ref={audioRefs.teamACheer} src={teamA.cheerUrl} preload="auto"></audio>}
+            {teamB?.cheerUrl && <audio ref={audioRefs.teamBCheer} src={teamB.cheerUrl} preload="auto"></audio>}
+            {teamA?.cheerUrl2 && <audio ref={audioRefs.teamACheer2} src={teamA.cheerUrl2} preload="auto"></audio>}
+            {teamB?.cheerUrl2 && <audio ref={audioRefs.teamBCheer2} src={teamB.cheerUrl2} preload="auto"></audio>}
             
             <button onClick={() => handleSoundToggle('bgm1')} className={`font-semibold py-2 px-3 rounded transition-colors text-sm text-white ${playingSound === 'bgm1' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
                 {playingSound === 'bgm1' ? '음악 중지' : '경기 시작1'}
@@ -79,23 +77,30 @@ const SoundPanel: React.FC<{ matchState: MatchState | null }> = ({ matchState })
             <button onClick={() => handleSoundToggle('end')} className={`font-semibold py-2 px-3 rounded transition-colors text-sm text-white ${playingSound === 'end' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-600 hover:bg-red-500'}`}>
                 {playingSound === 'end' ? '음악 중지' : '경기 종료'}
             </button>
-            {teamACheerUrl && matchState?.teamA.name && (
+            {teamA?.cheerUrl && teamA.name && (
                 <button onClick={() => handleSoundToggle('teamACheer')} className={`font-semibold py-2 px-3 rounded transition-colors text-sm text-white ${playingSound === 'teamACheer' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-sky-500 hover:bg-sky-400'}`}>
-                    {playingSound === 'teamACheer' ? '응원가 중지' : `${matchState.teamA.name} 응원가`}
+                    {playingSound === 'teamACheer' ? '응원가 중지' : `${teamA.name} 응원가 1`}
                 </button>
             )}
-            {teamBCheerUrl && matchState?.teamB.name && (
+            {teamB?.cheerUrl && teamB.name && (
                  <button onClick={() => handleSoundToggle('teamBCheer')} className={`font-semibold py-2 px-3 rounded transition-colors text-sm text-white ${playingSound === 'teamBCheer' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-500 hover:bg-red-400'}`}>
-                    {playingSound === 'teamBCheer' ? '응원가 중지' : `${matchState.teamB.name} 응원가`}
+                    {playingSound === 'teamBCheer' ? '응원가 중지' : `${teamB.name} 응원가 1`}
+                </button>
+            )}
+            {teamA?.cheerUrl2 && teamA.name && (
+                <button onClick={() => handleSoundToggle('teamACheer2')} className={`font-semibold py-2 px-3 rounded transition-colors text-sm text-white ${playingSound === 'teamACheer2' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-sky-500 hover:bg-sky-400'}`}>
+                    {playingSound === 'teamACheer2' ? '응원가 중지' : `${teamA.name} ${teamA.cheerName2 || '응원가 2'}`}
+                </button>
+            )}
+            {teamB?.cheerUrl2 && teamB.name && (
+                 <button onClick={() => handleSoundToggle('teamBCheer2')} className={`font-semibold py-2 px-3 rounded transition-colors text-sm text-white ${playingSound === 'teamBCheer2' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-500 hover:bg-red-400'}`}>
+                    {playingSound === 'teamBCheer2' ? '응원가 중지' : `${teamB.name} ${teamB.cheerName2 || '응원가 2'}`}
                 </button>
             )}
         </div>
     );
 };
 
-
-// --- Score Trend Chart Component ---
-// Moved outside the main component to prevent re-creation on every render.
 const ScoreTrendChart: React.FC<{ match: MatchState }> = ({ match }) => {
     const chartData = useMemo(() => {
         return match.scoreHistory.map((score, index) => ({
@@ -115,161 +120,163 @@ const ScoreTrendChart: React.FC<{ match: MatchState }> = ({ match }) => {
                     <YAxis allowDecimals={false} stroke="#94a3b8" />
                     <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
                     <Legend verticalAlign="top" />
-                    <Line type="monotone" dataKey={match.teamA.name} stroke="#38bdf8" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey={match.teamB.name} stroke="#f87171" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey={match.teamA.name} stroke={match.teamA.color || "#38bdf8"} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey={match.teamB.name} stroke={match.teamB.color || "#f87171"} strokeWidth={2} dot={false} />
                 </LineChart>
             </ResponsiveContainer>
         </div>
     );
 };
 
-// Moved outside for consistency and best practices.
-const WaitingComponent: React.FC<{ message: string }> = ({ message }) => (
-    <div className="flex-grow flex items-center justify-center bg-slate-900/50 rounded-lg">
-        <div className="text-center p-8 text-slate-400">
-            <div className="w-12 h-12 border-4 border-dashed rounded-full animate-spin border-sky-400 mx-auto mb-4"></div>
-            <p className="text-lg">{message}</p>
-            {message.includes('연결') 
-                ? <p>호스트가 세션을 다시 시작하면 자동으로 연결됩니다.</p>
-                : <p>잠시 후 자동으로 표시됩니다.</p>
-            }
-        </div>
-    </div>
-);
+interface TeamData {
+    info: SavedTeamInfo;
+    players: Record<string, Player>;
+}
 
+interface AllTeamInfo {
+    teams: Record<string, TeamData>;
+}
 
-const AnnouncerScreen: React.FC<AnnouncerScreenProps> = ({ onNavigateToHistory }) => {
-    const { teamSets, matchState, p2p } = useData();
+const LiveGameDisplay: React.FC<{ match: MatchState, allTeamInfo: AllTeamInfo }> = ({ match, allTeamInfo }) => {
     const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
     const [showGuideModal, setShowGuideModal] = useState(false);
 
-    const allPlayersAndTeams = useMemo(() => {
-        const teams: Record<string, { info: SavedTeamInfo; players: Record<string, Player> }> = {};
-        if (Array.isArray(teamSets)) {
-            teamSets.forEach(set => {
-                if (set && Array.isArray(set.teams)) {
-                    set.teams.forEach(team => {
-                        if (team && team.teamName && set.id && set.players) {
-                            const key = `${set.id}___${team.teamName}`;
-                            teams[key] = {
-                                info: team,
-                                players: set.players,
-                            };
-                        }
-                    });
-                }
-            });
-        }
-        return { teams };
-    }, [teamSets]);
-
-    if (!p2p.isHost && !p2p.isConnected) {
-        return <WaitingComponent message="호스트와의 연결이 끊어졌습니다." />;
+    if (!match || typeof match !== 'object' || !match.teamA || typeof match.teamA !== 'object' || !match.teamB || typeof match.teamB !== 'object') {
+        return (
+            <div className="flex-grow flex items-center justify-center">
+                <p className="text-red-500 text-lg">오류: 표시할 경기 데이터가 올바르지 않습니다.</p>
+            </div>
+        );
     }
 
-    if (!matchState) {
-        return <WaitingComponent message="호스트로부터 경기 데이터를 기다리는 중..." />;
-    }
+    const teamAInfo = match.teamA.key ? allTeamInfo.teams[match.teamA.key]?.info : null;
+    const teamBInfo = match.teamB.key ? allTeamInfo.teams[match.teamB.key]?.info : null;
 
-    const teamAData = matchState.teamA.key ? allPlayersAndTeams.teams[matchState.teamA.key] : null;
-    const teamBData = matchState.teamB.key ? allPlayersAndTeams.teams[matchState.teamB.key] : null;
-
-    const allPlayers = useMemo(() => {
-        let players: Record<string, Player> = {};
-        if (teamAData) players = { ...players, ...teamAData.players };
-        if (teamBData) players = { ...players, ...teamBData.players };
-        return players;
-    }, [teamAData, teamBData]);
-
-    const handlePlayerClick = (player: Player) => setSelectedPlayer(player);
-    
-    const TeamRoster: React.FC<{ teamName: string; color: string; teamInfo: SavedTeamInfo | null }> = ({ teamName, color, teamInfo }) => {
-        if (!teamInfo) {
+    const TeamRoster: React.FC<{ team: typeof match.teamA, teamInfo: SavedTeamInfo | null }> = ({ team, teamInfo }) => {
+        const teamColor = team.color || '#cbd5e1';
+        
+        if (!team.players || Object.values(team.players).length === 0) {
             return (
-                <div className="bg-slate-900/50 p-4 rounded-lg border-2 h-full flex items-center justify-center text-center" style={{ borderColor: color }}>
+                <div className="bg-slate-900/50 p-4 rounded-lg border-2 h-full flex items-center justify-center text-center" style={{ borderColor: teamColor }}>
                     <p className="text-slate-400">선수 명단 정보 없음<br/>(수동 생성 팀)</p>
                 </div>
             );
         }
+
+        // FIX: Add explicit `Player` type to sort callback parameters `a` and `b` to resolve them being inferred as `unknown`.
+        const sortedPlayers = Object.values(team.players).sort((a: Player, b: Player) => {
+            const aIsCaptain = teamInfo ? a.id === teamInfo.captainId : false;
+            const bIsCaptain = teamInfo ? b.id === teamInfo.captainId : false;
+            if (aIsCaptain !== bIsCaptain) {
+                return bIsCaptain ? 1 : -1;
+            }
+            return a.originalName.localeCompare(b.originalName);
+        });
+
         return (
-            <div className="bg-slate-900/50 p-4 rounded-lg border-2 h-full" style={{ borderColor: color }}>
-                <h3 className="text-2xl font-bold mb-4 text-center" style={{ color }}>{teamName}</h3>
+            <div className="bg-slate-900/50 p-4 rounded-lg border-2 h-full" style={{ borderColor: teamColor }}>
+                <div className="flex flex-col items-center text-center gap-2 mb-4">
+                    <TeamEmblem emblem={team.emblem} color={teamColor} className="w-10 h-10" />
+                    <div>
+                        <h3 className="text-2xl font-bold text-white">{team.name}</h3>
+                        {team.slogan && <p className="text-sm italic" style={{ color: teamColor }}>"{team.slogan}"</p>}
+                    </div>
+                </div>
                 <ul className="space-y-2">
-                    {teamInfo.playerIds.map(id => allPlayers[id]).filter(Boolean).sort((a,b) => (b.id === teamInfo.captainId ? 1 : -1) - (a.id === teamInfo.captainId ? 1 : -1)).map(player => (
-                        <li key={player.id} onClick={() => handlePlayerClick(player)} className="flex items-center gap-3 bg-slate-800 p-2 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors">
-                            {player.id === teamInfo.captainId && <CrownIcon className="w-5 h-5 text-yellow-400 flex-shrink-0" />}
-                            <span className="font-semibold text-slate-200 truncate">{player.originalName}</span>
-                        </li>
-                    ))}
+                    {/* FIX: Add explicit `Player` type to map callback parameter `player` to resolve it being inferred as `unknown`. */}
+                    {sortedPlayers.map((player: Player) => {
+                        const isCaptain = teamInfo ? player.id === teamInfo.captainId : false;
+                        return (
+                            <li key={player.id} onClick={() => setSelectedPlayer(player)} className="flex items-center gap-3 bg-slate-800 p-2 rounded-lg cursor-pointer hover:bg-slate-700 transition-colors">
+                                {isCaptain && <CrownIcon className="w-5 h-5 text-yellow-400 flex-shrink-0" />}
+                                <span className="font-semibold text-slate-200 truncate">{player.originalName}</span>
+                            </li>
+                        );
+                    })}
                 </ul>
             </div>
         )
     };
-    
+
     return (
-        <div className="w-full max-w-7xl mx-auto flex flex-col gap-6 flex-grow animate-fade-in">
+        <div className="flex flex-col gap-6 animate-fade-in flex-grow">
             {showGuideModal && <CommentaryGuideModal onClose={() => setShowGuideModal(false)} />}
             {selectedPlayer && <StatModal player={selectedPlayer} onClose={() => setSelectedPlayer(null)} showRealNames={true} />}
             
-            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-700 p-4 rounded-lg shadow-2xl">
-                 <div className="flex justify-between items-center flex-wrap gap-2">
-                    <h2 className="text-xl font-bold text-slate-300">실시간 중계 화면</h2>
-                    <div className="flex items-center gap-4">
-                        <SoundPanel matchState={matchState} />
-                        <button onClick={() => setShowGuideModal(true)} className="p-2 text-slate-400 hover:text-white" aria-label="해설 가이드 보기">
-                            <QuestionMarkCircleIcon className="w-8 h-8" />
-                        </button>
-                        <button onClick={onNavigateToHistory} className="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-lg">과거 기록 보기</button>
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-6">
+                <TeamRoster team={match.teamA} teamInfo={teamAInfo} />
+                <div className="bg-slate-900/50 p-4 rounded-lg flex flex-col items-center justify-center gap-4 text-center">
+                    <h2 className="text-4xl font-bold text-white">{match.teamA.name} vs {match.teamB.name}</h2>
+                    <div className="flex items-center justify-center gap-6 my-4">
+                        <span className="text-8xl font-extrabold" style={{ color: match.teamA.color || '#38bdf8' }}>{match.teamA.score}</span>
+                        <span className="text-6xl font-bold text-slate-400">-</span>
+                        <span className="text-8xl font-extrabold" style={{ color: match.teamB.color || '#f87171' }}>{match.teamB.score}</span>
                     </div>
-                 </div>
-            </div>
-
-            <div className="flex flex-col gap-6 animate-fade-in flex-grow">
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-6">
-                    <TeamRoster teamName={matchState.teamA.name} color="#38bdf8" teamInfo={teamAData?.info || null} />
-
-                    <div className="bg-slate-900/50 p-4 rounded-lg flex flex-col items-center justify-center gap-4 text-center">
-                        <h2 className="text-4xl font-bold">{matchState.teamA.name} vs {matchState.teamB.name}</h2>
-                        <div className="flex items-center justify-center gap-6 my-4">
-                            <span className="text-8xl font-extrabold text-sky-400">{matchState.teamA.score}</span>
-                            <span className="text-6xl font-bold">:</span>
-                            <span className="text-8xl font-extrabold text-red-400">{matchState.teamB.score}</span>
-                        </div>
-
-                        {matchState.timeout && (
-                            <div className="mt-2 bg-slate-800 p-3 rounded-lg animate-pulse border border-yellow-400 w-full">
-                                <p className="text-xl font-bold text-yellow-300">
-                                    {matchState.timeout.team === 'A' ? matchState.teamA.name : matchState.teamB.name} 작전 타임
-                                </p>
-                                <div className="flex items-center justify-center gap-4 mt-1">
-                                    <p className="text-4xl font-mono">{matchState.timeout.timeLeft}</p>
-                                    <button onClick={() => setShowGuideModal(true)} className="p-1 text-slate-400 hover:text-white" aria-label="해설 가이드 보기">
-                                        <QuestionMarkCircleIcon className="w-7 h-7" />
-                                    </button>
+                    {match.servingTeam && !match.gameOver && (
+                        (() => {
+                            const servingTeam = match.servingTeam === 'A' ? match.teamA : match.teamB;
+                            return (
+// FIX: Moved color styling to parent div to fix type error. VolleyballIcon inherits color via 'currentColor'.
+                                <div className="flex items-center justify-center gap-2 mb-2 text-lg" style={{ color: servingTeam.color }}>
+                                    <VolleyballIcon className="w-6 h-6 animate-pulse" />
+                                    <span className="font-bold">
+                                        {servingTeam.name} 서브
+                                    </span>
                                 </div>
-                            </div>
-                        )}
-
-                        {matchState.gameOver && (
-                             <div className="bg-yellow-400/20 border border-yellow-400 p-3 rounded-lg"><p className="text-2xl font-bold text-yellow-300">경기 종료!</p></div>
-                        )}
-                        {matchState.isDeuce && !matchState.gameOver && <p className="text-xl font-bold text-yellow-400 animate-pulse">듀스</p>}
-                        
-                        <div className="bg-slate-800 p-3 rounded-md text-slate-300">
-                            <p>작전 타임: {matchState.teamA.name} ({matchState.teamA.timeouts}) / {matchState.teamB.name} ({matchState.teamB.timeouts})</p>
-                            {matchState.servingTeam && !matchState.gameOver && <p>현재 서브: {matchState.servingTeam === 'A' ? matchState.teamA.name : matchState.teamB.name}</p>}
-                        </div>
-                    </div>
-
-                    <TeamRoster teamName={matchState.teamB.name} color="#f87171" teamInfo={teamBData?.info || null} />
+                            );
+                        })()
+                    )}
+                    {match.isDeuce && !match.gameOver && <p className="text-yellow-400 font-bold text-xl animate-pulse">듀스!</p>}
+                    {match.gameOver && <p className="text-green-400 font-bold text-2xl">경기 종료!</p>}
+                    <button onClick={() => setShowGuideModal(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded-lg">
+                        <QuestionMarkCircleIcon className="w-5 h-5" />
+                        해설 가이드 보기
+                    </button>
                 </div>
-
-                <div className="grid grid-cols-1 gap-6">
-                   <ScoreTrendChart match={matchState} />
-                </div>
+                <TeamRoster team={match.teamB} teamInfo={teamBInfo} />
             </div>
+            {match.scoreHistory && match.scoreHistory.length > 1 && <ScoreTrendChart match={match} />}
         </div>
     );
-}
+};
+
+const AnnouncerScreen: React.FC<AnnouncerScreenProps> = ({ onNavigateToHistory }) => {
+    const { matchState, teamSets, p2p } = useData();
+
+    const allTeamInfo = useMemo((): AllTeamInfo => {
+        const teams: Record<string, TeamData> = {};
+        teamSets.forEach(set => {
+            set.teams.forEach(team => {
+                const key = `${set.id}___${team.teamName}`;
+                teams[key] = {
+                    info: team,
+                    players: set.players,
+                };
+            });
+        });
+        return { teams };
+    }, [teamSets]);
+
+    return (
+        <div className="w-full max-w-7xl mx-auto flex flex-col gap-6 flex-grow">
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-700 p-4 rounded-lg shadow-2xl">
+                <SoundPanel matchState={matchState} />
+            </div>
+
+            {matchState ? (
+                <LiveGameDisplay match={matchState} allTeamInfo={allTeamInfo} />
+            ) : (
+                <div className="flex-grow flex flex-col items-center justify-center text-center text-slate-400">
+                    <p className="text-2xl font-bold">진행 중인 경기가 없습니다.</p>
+                    <p className="mt-2">호스트가 경기를 시작하면 데이터가 여기에 표시됩니다.</p>
+                    <p className="mt-1 text-sm">현재 세션 ID: <span className="font-mono text-slate-300">{p2p.connections[0]?.peer || '연결되지 않음'}</span></p>
+                    <button onClick={onNavigateToHistory} className="mt-6 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg">
+                        지난 경기 기록 보기
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default AnnouncerScreen;

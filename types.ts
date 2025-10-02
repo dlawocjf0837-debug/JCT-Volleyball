@@ -1,3 +1,4 @@
+// FIX: Removed incorrect self-import of Player.
 export interface Stats {
     height: number;
     shuttleRun: number;
@@ -44,6 +45,7 @@ export interface Team {
     captainId: string;
     playerIds: string[];
     color: string;
+    emblem?: string;
 }
 
 // --- Types for saved Team Sets ---
@@ -52,6 +54,11 @@ export interface SavedTeamInfo {
     captainId: string;
     playerIds: string[];
     cheerUrl?: string;
+    cheerUrl2?: string;
+    cheerName2?: string;
+    emblem?: string; // Icon name, user emblem ID, or Base64 string
+    color?: string; // Hex color code for primary color
+    slogan?: string; // Team slogan
 }
 export interface TeamSet {
     id: string;
@@ -61,12 +68,31 @@ export interface TeamSet {
     players: Record<string, Player>;
 }
 
+// --- New type for user-uploaded emblems ---
+export type UserEmblem = {
+    id: string; // e.g., "user_1678886400000"
+    data: string; // Base64 data URL
+};
+
+// --- New types for individual player stats in a match ---
+export interface PlayerStats {
+    points: number;
+    serviceAces: number;
+    serviceFaults: number;
+    blockingPoints: number;
+    spikeSuccesses: number;
+}
 
 // --- New types for Scoreboard ---
 export interface TeamMatchState {
     name: string;
     key?: string; // Unique key to identify the saved team data
     cheerUrl?: string;
+    cheerUrl2?: string;
+    cheerName2?: string;
+    emblem?: string;
+    color?: string;
+    slogan?: string;
     score: number;
     setsWon: number;
     timeouts: number;
@@ -76,6 +102,8 @@ export interface TeamMatchState {
     serviceFaults: number;
     blockingPoints: number;
     spikeSuccesses: number;
+    players: Record<string, Player>;
+    playerStats: Record<string, PlayerStats>;
 }
 
 export interface MatchState {
@@ -91,3 +119,19 @@ export interface MatchState {
     status?: 'in_progress' | 'completed';
     timeout: { team: 'A' | 'B', timeLeft: number } | null;
 }
+
+// --- Action type for match reducer ---
+export type Action =
+    | { type: 'SCORE'; team: 'A' | 'B'; amount: number }
+    | { type: 'SERVICE_ACE'; team: 'A' | 'B'; playerId: string }
+    | { type: 'SERVICE_FAULT'; team: 'A' | 'B'; playerId: string }
+    | { type: 'BLOCKING_POINT'; team: 'A' | 'B'; playerId: string }
+    | { type: 'SPIKE_SUCCESS'; team: 'A' | 'B'; playerId: string }
+    | { type: 'TAKE_TIMEOUT'; team: 'A' | 'B' }
+    | { type: 'ADJUST_FAIR_PLAY'; team: 'A' | 'B'; amount: number }
+    | { type: 'INCREMENT_3_HIT'; team: 'A' | 'B' }
+    | { type: 'SET_SERVING_TEAM'; team: 'A' | 'B' }
+    | { type: 'RESET_STATE' }
+    | { type: 'LOAD_STATE'; state: MatchState }
+    | { type: 'END_TIMEOUT' }
+    | { type: 'UPDATE_TIMEOUT_TIMER'; timeLeft: number };

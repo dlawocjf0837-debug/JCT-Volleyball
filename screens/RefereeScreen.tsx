@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../contexts/DataContext';
 import { CrownIcon, QuestionMarkCircleIcon } from '../components/icons';
 import RulesModal from '../components/RulesModal';
+import TeamEmblem from '../components/TeamEmblem';
+import { SavedTeamInfo } from '../types';
 
-interface FlattenedTeam {
-    teamName: string;
+interface FlattenedTeam extends SavedTeamInfo {
     players: string[];
     captain: string;
     key: string;
@@ -23,18 +24,17 @@ const RefereeScreen: React.FC<RefereeScreenProps> = ({ onStartMatch }) => {
     const [showRulesModal, setShowRulesModal] = useState(false);
     const [selectedClass, setSelectedClass] = useState<string>('');
 
-    // Reload data when component mounts to ensure it's fresh
-    React.useEffect(() => {
+    useEffect(() => {
         reloadData();
     }, [reloadData]);
     
-    const flattenedTeams = useMemo(() => {
+    const flattenedTeams = useMemo((): FlattenedTeam[] => {
         const teams: FlattenedTeam[] = [];
         teamSets.forEach(set => {
             set.teams.forEach(team => {
                 const captain = set.players[team.captainId];
                 teams.push({
-                    teamName: team.teamName,
+                    ...team,
                     captain: captain ? captain.originalName : '주장 정보 없음',
                     players: team.playerIds.map(id => set.players[id]?.originalName || '선수 정보 없음'),
                     key: `${set.id}___${team.teamName}`,
@@ -48,7 +48,8 @@ const RefereeScreen: React.FC<RefereeScreenProps> = ({ onStartMatch }) => {
 
     const availableClasses = useMemo(() => {
         const classNames = new Set(flattenedTeams.map(t => t.className).filter(Boolean));
-        return Array.from(classNames).sort((a, b) => {
+        // FIX: Add explicit types to sort callback parameters to prevent them from being inferred as `unknown`.
+        return Array.from(classNames).sort((a: string, b: string) => {
             if (a === '전체') return -1;
             if (b === '전체') return 1;
             return a.localeCompare(b);
@@ -95,9 +96,16 @@ const RefereeScreen: React.FC<RefereeScreenProps> = ({ onStartMatch }) => {
                 </div>
             );
         }
+        const teamColor = team.color || color;
         return (
-             <div className="bg-slate-900/50 p-6 rounded-lg border-2 border-solid animate-fade-in" style={{ borderColor: color }}>
-                <h3 className="text-2xl font-bold mb-4" style={{ color }}>{team.displayName}</h3>
+             <div className="bg-slate-900/50 p-6 rounded-lg border-2 border-solid animate-fade-in" style={{ borderColor: teamColor }}>
+                <div className="flex flex-col items-center text-center gap-2 mb-4">
+                    <TeamEmblem emblem={team.emblem} color={teamColor} className="w-12 h-12"/>
+                    <div>
+                        <h3 className="text-2xl font-bold text-white">{team.displayName}</h3>
+                        {team.slogan && <p className="text-sm italic" style={{ color: teamColor }}>"{team.slogan}"</p>}
+                    </div>
+                </div>
                 <div className="bg-slate-800 p-4 rounded-md space-y-3">
                     <h4 className="font-bold text-lg text-slate-300">선수 명단</h4>
                     <div className="flex items-center gap-2 text-yellow-400 font-semibold text-lg">

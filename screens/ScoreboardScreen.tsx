@@ -3,11 +3,19 @@ import { useData } from '../contexts/DataContext';
 import { PlayIcon, PauseIcon, VolleyballIcon, StopwatchIcon, QuestionMarkCircleIcon } from '../components/icons';
 import RulesModal from '../components/RulesModal';
 import TimeoutModal from '../components/TimeoutModal';
+import PlayerSelectionModal from '../components/PlayerSelectionModal';
+import { Action } from '../types';
+import TeamEmblem from '../components/TeamEmblem';
 
 interface ScoreboardProps {
     onBackToMenu: () => void;
     mode: 'record' | 'referee';
 }
+
+type PendingAction = {
+    actionType: 'SERVICE_ACE' | 'SERVICE_FAULT' | 'BLOCKING_POINT' | 'SPIKE_SUCCESS';
+    team: 'A' | 'B';
+};
 
 export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode }) => {
     const { 
@@ -17,33 +25,28 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
     } = useData();
 
     const [showRulesModal, setShowRulesModal] = useState(false);
+    const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
     useEffect(() => {
-        // Auto-start timer when game begins (first serve is set)
         if (matchState?.servingTeam && !timerOn && matchTime === 0 && !matchState.gameOver) {
             setTimerOn(true);
         }
     }, [matchState?.servingTeam, timerOn, matchTime, matchState?.gameOver, setTimerOn]);
     
-    // Host-only effect to manage the timeout countdown
     useEffect(() => {
-        if (!p2p.isHost || !matchState?.timeout) {
-            return;
-        }
-
+        if (!p2p.isHost || !matchState?.timeout) return;
         const timerId = setInterval(() => {
-            const newTimeLeft = matchState.timeout.timeLeft - 1;
-            if (newTimeLeft >= 0) {
-                dispatch({ type: 'UPDATE_TIMEOUT_TIMER', timeLeft: newTimeLeft });
-            } else {
-                dispatch({ type: 'END_TIMEOUT' });
-                showToast('작전 타임이 종료되었습니다.', 'success');
-                if (!matchState.gameOver) {
-                    setTimerOn(true); // Resume game timer automatically
+            if (matchState?.timeout) {
+                const newTimeLeft = matchState.timeout.timeLeft - 1;
+                if (newTimeLeft >= 0) {
+                    dispatch({ type: 'UPDATE_TIMEOUT_TIMER', timeLeft: newTimeLeft });
+                } else {
+                    dispatch({ type: 'END_TIMEOUT' });
+                    showToast('작전 타임이 종료되었습니다.', 'success');
+                    if (!matchState.gameOver) setTimerOn(true);
                 }
             }
         }, 1000);
-
         return () => clearInterval(timerId);
     }, [p2p.isHost, matchState?.timeout, dispatch, setTimerOn, matchState?.gameOver, showToast]);
 
@@ -55,9 +58,10 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
     };
 
     const handleTimeout = (team: 'A' | 'B') => {
-        const teamState = team === 'A' ? matchState?.teamA : matchState?.teamB;
-        if (teamState && teamState.timeouts > 0 && !matchState?.gameOver && !matchState.timeout) {
-            setTimerOn(false); // Pause game clock
+        if (!matchState) return;
+        const teamState = team === 'A' ? matchState.teamA : matchState.teamB;
+        if (teamState && teamState.timeouts > 0 && !matchState.gameOver && !matchState.timeout) {
+            setTimerOn(false);
             dispatch({ type: 'TAKE_TIMEOUT', team });
             showToast(`${teamState.name} 작전 타임 사용!`, 'success');
         }
@@ -67,16 +71,24 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
         if (!matchState) return;
         const finalResult = { ...matchState, status: 'completed' as const, date: new Date().toISOString(), time: matchTime };
         const newHistory = [finalResult, ...matchHistory];
-        await saveMatchHistory(newHistory);
-        showToast('최종 경기 기록이 저장되었습니다!', 'success');
-        endSession(); // End the P2P session on game completion
+        await saveMatchHistory(newHistory, '최종 경기 기록이 저장되었습니다!');
+        endSession();
     };
 
     const handleCloseTimeout = () => {
         dispatch({ type: 'END_TIMEOUT' });
-        if (matchState && !matchState.gameOver) {
-            setTimerOn(true); // Resume game clock if closed manually
-        }
+        if (matchState && !matchState.gameOver) setTimerOn(true);
+    };
+
+    const handlePlayerSelectAndDispatch = (playerId: string) => {
+        if (!pendingAction) return;
+        const actionToDispatch = {
+            type: pendingAction.actionType,
+            team: pendingAction.team,
+            playerId,
+        } as Action;
+        dispatch(actionToDispatch);
+        setPendingAction(null);
     };
 
     if (!matchState) {
@@ -95,27 +107,33 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
     const TeamColumn: React.FC<{ teamKey: 'A' | 'B' }> = ({ teamKey }) => {
         const team = teamKey === 'A' ? matchState.teamA : matchState.teamB;
         const isServing = matchState.servingTeam === teamKey;
-        const color = teamKey === 'A' ? 'border-sky-500' : 'border-red-500';
+        const color = team.color || (teamKey === 'A' ? '#38bdf8' : '#f87171');
         const servingClasses = isServing && !matchState.gameOver ? 'glowing-border' : 'border-solid border-slate-700';
 
         return (
-            <div className={`p-4 flex flex-col items-center gap-4 bg-slate-900/50 rounded-lg border-2 transition-all duration-300 ${servingClasses}`}>
-                <h2 className={`text-3xl font-bold text-center truncate ${color.replace('border', 'text')}`}>{team.name}</h2>
-                <div className="text-9xl font-extrabold">{team.score}</div>
+            <div className={`p-4 flex flex-col items-center gap-4 bg-slate-900/50 rounded-lg border-2 transition-all duration-300 ${servingClasses}`} style={{ borderColor: isServing && !matchState.gameOver ? color : '#334155' }}>
+                <div className="flex items-center gap-3">
+                    <TeamEmblem emblem={team.emblem} color={color} className="w-10 h-10"/>
+                    <div className="text-center">
+                        <h2 className="text-3xl font-bold truncate text-white">{team.name}</h2>
+                        {team.slogan && <p className="text-xs italic mt-1" style={{ color: color }}>"{team.slogan}"</p>}
+                    </div>
+                </div>
+                <div className="text-9xl font-extrabold" style={{ color: color }}>{team.score}</div>
                 <div className="flex gap-4">
-                    <button onClick={() => dispatch({type: 'SCORE', team: teamKey, amount: 1})} disabled={matchState.gameOver || !!matchState.timeout} className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded-lg text-lg disabled:bg-slate-600 disabled:cursor-not-allowed">+</button>
                     <button onClick={() => dispatch({type: 'SCORE', team: teamKey, amount: -1})} disabled={matchState.gameOver || !!matchState.timeout} className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-lg text-lg disabled:bg-slate-600 disabled:cursor-not-allowed">-</button>
+                    <button onClick={() => dispatch({type: 'SCORE', team: teamKey, amount: 1})} disabled={matchState.gameOver || !!matchState.timeout} className="bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 rounded-lg text-lg disabled:bg-slate-600 disabled:cursor-not-allowed">+</button>
                 </div>
                 
                 { !matchState.servingTeam && !matchState.gameOver && <button onClick={() => dispatch({type: 'SET_SERVING_TEAM', team: teamKey})} className="flex items-center gap-2 bg-[#00A3FF] hover:bg-[#0082cc] py-2 px-4 rounded-lg font-semibold"><VolleyballIcon className="w-5 h-5"/> 서브 시작</button> }
-                { isServing && !matchState.gameOver && <div className="flex items-center gap-2 text-[#00A3FF] font-bold text-lg"><VolleyballIcon className="w-6 h-6"/> SERVE</div> }
+                { isServing && !matchState.gameOver && <div className="flex items-center gap-2 font-bold text-lg" style={{ color: color }}><VolleyballIcon className="w-6 h-6"/> SERVE</div> }
 
                 <div className="w-full space-y-3 mt-4 border-t border-slate-700 pt-4">
                     <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => dispatch({type: 'SERVICE_ACE', team: teamKey})} disabled={!isServing || matchState.gameOver || !!matchState.timeout} className="bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">서브 득점</button>
-                        <button onClick={() => dispatch({type: 'SERVICE_FAULT', team: teamKey})} disabled={!isServing || matchState.gameOver || !!matchState.timeout} className="w-full bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">서브 범실</button>
-                        <button onClick={() => dispatch({type: 'SPIKE_SUCCESS', team: teamKey})} disabled={matchState.gameOver || !!matchState.timeout} className="w-full bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">스파이크 성공</button>
-                        <button onClick={() => dispatch({type: 'BLOCKING_POINT', team: teamKey})} disabled={matchState.gameOver || !!matchState.timeout} className="w-full bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">블로킹 득점</button>
+                        <button onClick={() => setPendingAction({ actionType: 'SERVICE_ACE', team: teamKey })} disabled={!isServing || matchState.gameOver || !!matchState.timeout} className="bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">서브 득점</button>
+                        <button onClick={() => setPendingAction({ actionType: 'SERVICE_FAULT', team: teamKey })} disabled={!isServing || matchState.gameOver || !!matchState.timeout} className="w-full bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">서브 범실</button>
+                        <button onClick={() => setPendingAction({ actionType: 'SPIKE_SUCCESS', team: teamKey })} disabled={matchState.gameOver || !!matchState.timeout} className="w-full bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">스파이크 성공</button>
+                        <button onClick={() => setPendingAction({ actionType: 'BLOCKING_POINT', team: teamKey })} disabled={matchState.gameOver || !!matchState.timeout} className="w-full bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50">블로킹 득점</button>
                     </div>
                      <button onClick={() => handleTimeout(teamKey)} disabled={team.timeouts === 0 || matchState.gameOver || !!matchState.timeout} className="w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 font-semibold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"><StopwatchIcon className="w-5 h-5" /> 작전 타임 ({team.timeouts})</button>
                     <div className="flex justify-between items-center bg-slate-800 p-2 rounded">
@@ -147,6 +165,16 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
                 />
             )}
             {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
+             {pendingAction && (
+                <PlayerSelectionModal
+                    isOpen={!!pendingAction}
+                    onClose={() => setPendingAction(null)}
+                    onSelect={handlePlayerSelectAndDispatch}
+                    players={matchState[pendingAction.team === 'A' ? 'teamA' : 'teamB'].players}
+                    teamName={matchState[pendingAction.team === 'A' ? 'teamA' : 'teamB'].name}
+                    teamColor={matchState[pendingAction.team === 'A' ? 'teamA' : 'teamB'].color || (pendingAction.team === 'A' ? '#38bdf8' : '#f87171')}
+                />
+            )}
             
             <button onClick={() => setShowRulesModal(true)} className="absolute top-0 right-0 p-2 text-slate-400 hover:text-white transition-colors" aria-label="규칙 보기">
                 <QuestionMarkCircleIcon className="w-8 h-8" />
@@ -178,12 +206,32 @@ export const ScoreboardScreen: React.FC<ScoreboardProps> = ({ onBackToMenu, mode
                 )}
             </div>
 
-            {matchState.gameOver && (
-                <div className="text-center bg-[#00A3FF]/20 border border-[#00A3FF] p-4 rounded-lg">
-                    <h3 className="text-2xl font-bold text-[#00A3FF]">경기 종료! 최종 승자: {matchState.winner === 'A' ? matchState.teamA.name : matchState.teamB.name}!</h3>
-                    <p className="text-lg mt-1">{matchState.teamA.name} {matchState.teamA.score} : {matchState.teamB.score} {matchState.teamB.name}</p>
-                </div>
-            )}
+            {matchState.gameOver && (() => {
+                const finalScoreA = matchState.teamA.score + matchState.teamA.fairPlay + matchState.teamA.threeHitPlays;
+                const finalScoreB = matchState.teamB.score + matchState.teamB.fairPlay + matchState.teamB.threeHitPlays;
+                let winnerMessage;
+                if (finalScoreA > finalScoreB) {
+                    winnerMessage = `최종 승자: ${matchState.teamA.name}!`;
+                } else if (finalScoreB > finalScoreA) {
+                    winnerMessage = `최종 승자: ${matchState.teamB.name}!`;
+                } else {
+                    winnerMessage = "최종 결과: 무승부!";
+                }
+
+                return (
+                    <div className="text-center bg-[#00A3FF]/20 border border-[#00A3FF] p-4 rounded-lg">
+                        <h3 className="text-2xl font-bold text-[#00A3FF]">경기 종료! {winnerMessage}</h3>
+                        <p className="text-lg mt-1">
+                            <span className="font-bold">{matchState.teamA.name} 총점: {finalScoreA}</span>
+                            <span className="mx-2">:</span>
+                            <span className="font-bold">{matchState.teamB.name} 총점: {finalScoreB}</span>
+                        </p>
+                        <p className="text-sm text-slate-400 mt-1">
+                            (총점 = 경기 점수 {matchState.teamA.score}:{matchState.teamB.score} + 페어플레이 + 3단 플레이)
+                        </p>
+                    </div>
+                );
+            })()}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-grow">
                 <TeamColumn teamKey="A" />

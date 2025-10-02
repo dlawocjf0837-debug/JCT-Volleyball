@@ -15,23 +15,19 @@ const defaultCsv = `번호,이름,성별,키,셔틀런,유연성,50m달리기,�
 30301,정수빈,여,170,55,16,8.1,8,8
 `;
 
+const FIXED_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Da0Cx6JyS5olJgcj6AOdVowN9rUB3tz19v9GCo2paS0/edit?usp=sharing';
+
 const PlayerInputScreen: React.FC<PlayerInputScreenProps> = ({ onStart }) => {
     const [csvData, setCsvData] = useState(defaultCsv);
-    const [sheetUrl, setSheetUrl] = useState('');
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const [statusMessage, setStatusMessage] = useState('데이터를 불러오려면 공개된 Google Sheet URL을 입력하세요.');
+    const [statusMessage, setStatusMessage] = useState('아래 버튼을 눌러 고정된 주소에서 데이터를 불러오세요.');
     const [selectedClass, setSelectedClass] = useState<string>('all');
 
 
     const handleFetchDataFromUrl = async () => {
-        if (!sheetUrl.trim()) {
-            setStatusMessage('구글 시트 URL을 입력해주세요.');
-            return;
-        }
-
-        const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        const match = FIXED_SHEET_URL.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
         if (!match || !match[1]) {
-            setStatusMessage('❌ 올바른 구글 시트 URL 형식이 아닙니다.');
+            setStatusMessage('❌ 고정된 구글 시트 URL 형식이 올바르지 않습니다.');
             return;
         }
         const spreadsheetId = match[1];
@@ -140,23 +136,22 @@ const PlayerInputScreen: React.FC<PlayerInputScreenProps> = ({ onStart }) => {
     return (
         <div className="max-w-4xl mx-auto bg-slate-900/50 backdrop-blur-sm border border-slate-700 p-6 rounded-lg shadow-2xl space-y-6">
             <div className="space-y-4">
-                <label htmlFor="sheet-url-input" className="block font-bold text-slate-300">
+                <h2 className="block font-bold text-slate-300">
                     1. 구글 시트 데이터 불러오기
-                </label>
-                <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                        id="sheet-url-input"
-                        type="text"
-                        value={sheetUrl}
-                        onChange={(e) => setSheetUrl(e.target.value)}
-                        className="flex-grow bg-slate-900 border border-slate-700 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A3FF] disabled:opacity-50"
-                        placeholder="공개된 구글 시트 URL을 붙여넣으세요"
-                        disabled={isLoadingData}
-                        aria-busy={isLoadingData}
-                    />
-                    <button onClick={handleFetchDataFromUrl} disabled={isLoadingData || !sheetUrl} className="bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-3 px-6 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed w-full sm:w-auto">
-                        {isLoadingData ? '불러오는 중...' : '데이터 불러오기'}
-                    </button>
+                </h2>
+                <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                     <div className="flex flex-col sm:flex-row gap-2 items-center bg-slate-900 p-2 rounded-md">
+                        <span className="text-sm text-slate-300 truncate font-mono flex-grow text-center sm:text-left">
+                            {FIXED_SHEET_URL}
+                        </span>
+                        <button
+                            onClick={handleFetchDataFromUrl}
+                            disabled={isLoadingData}
+                            className="w-full sm:w-auto flex-shrink-0 bg-[#00A3FF] hover:bg-[#0082cc] text-white font-bold py-2 px-4 rounded-lg transition duration-200 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        >
+                            {isLoadingData ? '불러오는 중...' : '데이터 불러오기'}
+                        </button>
+                    </div>
                 </div>
                  <p className="text-xs text-slate-500 mt-1">
                     * 시트는 '링크가 있는 모든 사용자에게 공개'로 설정되어 있어야 합니다. 첫 번째 시트의 데이터를 가져옵니다.
